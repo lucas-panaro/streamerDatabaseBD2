@@ -89,7 +89,7 @@ ON CONFLICT (nick) DO UPDATE SET email = EXCLUDED.email, pais_residencia = EXCLU
 -- Plataforma_Usuario (1000 usuários)
 INSERT INTO plataforma_usuario (nro_plataforma, nick_usuario, nro_usuario)
 SELECT
-    MOD(n - 1, 5) + 1 AS nro_plataforma,
+    floor(random() * 5) + 1 AS nro_plataforma,
     'user_' || LPAD(n::text, 4, '0') AS nick_usuario,
     'P' || (MOD(n - 1, 5) + 1) || '_' || LPAD(n::text, 4, '0') AS nro_usuario
 FROM generate_series(1, 1000) AS n
@@ -196,11 +196,11 @@ ON CONFLICT (nro_empresa, nro_canal) DO UPDATE SET valor = EXCLUDED.valor;
 -- # 4. VÍDEOS E COMENTÁRIOS (200 Vídeos, 1000 Comentários)
 -- ######################################################################################
 
--- 200 Vídeos (Nos primeiros 200 canais)
-INSERT INTO video (id_video, nro_canal, titulo, dataH, tema, duracao)
+-- 5000 Vídeos
+INSERT INTO video (id_video, nro_canal, titulo, dataH, tema, duracao, visu_total)
 SELECT
     n AS id_video,
-    MOD(n - 1, 200) + 1 AS nro_canal,
+    floor(random() * 500) + 1 AS nro_canal,
     'Vídeo Teste ' || n AS titulo,
     NOW() - (n * INTERVAL '1 hour') AS dataH,
     CASE MOD(n, 3)
@@ -208,8 +208,9 @@ SELECT
         WHEN 1 THEN 'Gameplay'
         ELSE 'Tutorial'
     END AS tema,
-    (MOD(n, 15) + 5) * INTERVAL '1 minute' AS duracao
-FROM generate_series(1, 200) AS n
+    (MOD(n, 15) + 5) * INTERVAL '1 minute' AS duracao,
+    floor(random() * 90000) AS visu_total    
+FROM generate_series(1, 5000) AS n
 ON CONFLICT (nro_canal, titulo, dataH) DO NOTHING;
 
 -- Participa (Streamer do canal participa do próprio vídeo)
