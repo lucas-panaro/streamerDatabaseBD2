@@ -16,7 +16,7 @@ Alunos:
 - Rodrigo Dias
 - Rafael Dos Anjos
 - Arthur
--
+- Lucca Amaral
 
 ## Passos para execução dos arquivos
 
