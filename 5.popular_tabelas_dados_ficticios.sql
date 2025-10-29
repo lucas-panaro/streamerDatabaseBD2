@@ -115,11 +115,10 @@ SELECT
     n AS nro_canal,
     'Canal_' || LPAD(n::text, 3, '0') AS nome,
     MOD(n - 1, 5) + 1 AS nro_plataforma,
-    CASE MOD(n, 4)
-        WHEN 0 THEN 'Jogos'
-        WHEN 1 THEN 'Música'
-        WHEN 2 THEN 'Notícias'
-        ELSE 'Culinária'
+    CASE MOD(n, 3)
+        WHEN 0 THEN 'privado'
+        WHEN 1 THEN 'publico'
+        ELSE 'misto'
     END AS tipo,
     ('2018-01-01'::DATE + (n * 5) * INTERVAL '1 day')::DATE AS data_criacao,
     'user_' || LPAD(n::text, 4, '0') AS nick_streamer
