@@ -15,7 +15,8 @@ Alunos:
 - Lucas Santana Panaro
 - Rodrigo Dias
 - Rafael Dos Anjos
-- Arthur
+- Rafaela Fonseca
+- Arthur Octávio
 - Lucca Amaral
 
 ## Passos para execução dos arquivos
