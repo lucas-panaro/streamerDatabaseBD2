@@ -1,14 +1,14 @@
 -- CONSULTA 01
-create or replace function canais_patrocinados(_nro_empresa int default null)
+create or replace function canais_patrocinados(_empresa_tax_id varchar(50) default null)
 returns table (nome_canal varchar, valor numeric)
 as $$
 	select c.nome, p.valor
 	from canal c
-	inner join patrocinio p on c.nro_canal = p.nro_canal
-	where _nro_empresa is null or p.nro_empresa = _nro_empresa
+	inner join patrocinio p on c.id_canal = p.id_canal
+	where _empresa_tax_id is null or p.empresa_tax_id = _empresa_tax_id
 	$$ language sql;
 
-select * from canais_patrocinados(11);
+select * from canais_patrocinados('12');
 
 SET search_path TO streamerdb;
 
@@ -26,11 +26,11 @@ BEGIN
     RETURN QUERY
     SELECT
         i.nick_membro,
-        COUNT(i.nro_canal) AS qtd_canais_membro,
+        COUNT(i.id_canal) AS qtd_canais_membro,
         COALESCE(SUM(nc.valor), 0.00) AS valor_mensal_total
     FROM inscricao i
     INNER JOIN nivel_canal nc 
-        ON i.nro_canal = nc.nro_canal AND i.nivel = nc.nivel
+        ON i.id_canal = nc.id_canal AND i.nivel = nc.nivel
     WHERE 
         _nick_usuario IS NULL OR i.nick_membro = _nick_usuario
     GROUP BY
@@ -40,10 +40,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+select * from fn_membros_valor_desembolsado();
+select * from fn_membros_valor_desembolsado('user_0189');
+
 -- CONSULTA 03
-CREATE OR REPLACE FUNCTION fn_canais_doacao_recebida(_nro_canal INTEGER DEFAULT NULL)
+CREATE OR REPLACE FUNCTION fn_canais_doacao_recebida(_id_canal uuid DEFAULT NULL)
 RETURNS TABLE (
-    nro_canal INTEGER,
+    id_canal uuid,
     nome_canal VARCHAR,
     soma_doacoes NUMERIC
 )
@@ -53,22 +56,25 @@ BEGIN
 
     RETURN QUERY
     SELECT
-        mv.nro_canal,
+        mv.id_canal,
         mv.nome_canal,
         mv.total_doacao_bruta AS soma_doacoes
     FROM MV_DOACAO_TOTAL_CANAL mv
     WHERE
         mv.total_doacao_bruta > 0
-        AND (_nro_canal IS NULL OR mv.nro_canal = _nro_canal)
+        AND (_id_canal IS NULL OR mv.id_canal = _id_canal)
     ORDER BY
         soma_doacoes DESC;
 END;
 $$ LANGUAGE plpgsql;
 
+select * from fn_canais_doacao_recebida();
+
 -- CONSULTA 04
-CREATE OR REPLACE FUNCTION fn_doacoes_lidas_por_video(_id_video INTEGER DEFAULT NULL)
+CREATE OR REPLACE FUNCTION fn_doacoes_lidas_por_video(_id_video uuid DEFAULT NULL)
 RETURNS TABLE (
-    id_video INTEGER,
+    id_canal uuid,
+    id_video uuid,
     titulo_video VARCHAR,
     soma_doacoes_lidas NUMERIC
 )
@@ -78,21 +84,26 @@ BEGIN
 
     RETURN QUERY
     SELECT
+        v.id_canal,
         v.id_video,
         v.titulo AS titulo_video,
         COALESCE(SUM(d.valor), 0.00) AS soma_doacoes_lidas
     FROM video v
-    JOIN comentario cm ON v.id_video = cm.id_video
-    JOIN doacao d ON cm.id_comentario = d.id_comentario
+    JOIN comentario cm ON v.id_video = cm.id_video and v.id_canal = cm.id_canal
+    JOIN doacao d ON cm.id_comentario = d.id_comentario and cm.id_video = d.id_video and cm.id_canal = d.id_canal
     WHERE
         UPPER(d.status) = 'LIDA'
         AND (_id_video IS NULL OR v.id_video = _id_video)
     GROUP BY
-        v.id_video, v.titulo
+        v.id_canal, v.id_video, v.titulo
     ORDER BY
         soma_doacoes_lidas DESC;
 END;
 $$ LANGUAGE plpgsql;
+
+
+select * from fn_doacoes_lidas_por_video();
+
 
 -- CONSULTA 05
 CREATE OR REPLACE FUNCTION fn_top_k_patrocinio(k INTEGER)
@@ -117,6 +128,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+select * from fn_top_k_patrocinio(1);
+
+
 -- CONSULTA 06
 CREATE OR REPLACE FUNCTION fn_top_k_membros(k INTEGER)
 RETURNS TABLE (
@@ -139,6 +153,9 @@ BEGIN
     LIMIT k;
 END;
 $$ LANGUAGE plpgsql;
+
+select * from fn_top_k_membros(1);
+
 
 -- CONSULTA 07
 CREATE OR REPLACE FUNCTION fn_top_k_doacoes(k INTEGER)
@@ -167,6 +184,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+select * from fn_top_k_doacoes(1);
+
 -- CONSULTA 08
 CREATE OR REPLACE FUNCTION fn_top_k_faturamento_total(k INTEGER)
 RETURNS TABLE (
@@ -191,3 +210,5 @@ BEGIN
     LIMIT k;
 END;
 $$ LANGUAGE plpgsql;
+
+select * from fn_top_k_faturamento_total(1);

@@ -14,14 +14,14 @@ CREATE OR REPLACE TRIGGER tg_user_count
 AFTER INSERT OR DELETE ON plataforma_usuario
   FOR EACH ROW EXECUTE PROCEDURE fn_update_user_count();
 
-
+-- Trocar por view materializada
 CREATE OR REPLACE FUNCTION fn_update_view_count() RETURNS TRIGGER AS $$
 	BEGIN
 		SET search_path TO streamerdb;
 	  IF TG_OP = 'INSERT' THEN
-	    UPDATE canal SET qtd_visualizacoes = qtd_visualizacoes + NEW.visu_total WHERE nro_canal = NEW.nro_canal;
+	    UPDATE canal SET qtd_visualizacoes = qtd_visualizacoes + NEW.visu_total WHERE id_canal = NEW.id_canal;
 	  ELSIF TG_OP = 'DELETE' THEN
-	    UPDATE canal SET qtd_visualizacoes = qtd_visualizacoes - OLD.visu_total WHERE nro_canal = OLD.nro_canal;
+	    UPDATE canal SET qtd_visualizacoes = qtd_visualizacoes - OLD.visu_total WHERE id_canal = OLD.id_canal;
 	  END IF;
 	  RETURN NULL;
 	END;
@@ -54,7 +54,7 @@ DECLARE
 BEGIN
     SET search_path TO streamerdb;
     
-    SELECT COUNT(*) INTO user_count 
+    SELECT COUNT(1) INTO user_count 
     FROM usuario 
     WHERE nick = NEW.nick_streamer;
 

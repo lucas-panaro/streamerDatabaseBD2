@@ -31,24 +31,24 @@ INSERT INTO pais (DDI, nome, moeda) VALUES
 ('+33', 'França', 'EUR')
 ON CONFLICT (DDI) DO UPDATE SET nome = EXCLUDED.nome, moeda = EXCLUDED.moeda;
 
--- 105 Empresas (5 Fundadoras/Responsáveis + 100 Patrocinadoras)
+-- Cadastro Empresas (5 Fundadoras/Responsáveis + 500 Patrocinadoras)
 -- NRO 1 a 5 para plataformas (garantido pelo TRUNCATE RESTART IDENTITY)
-INSERT INTO empresa (nro, nome, nome_fantasia) VALUES
+INSERT INTO empresa (tax_id, nome, nome_fantasia) VALUES
 (1, 'Alphabet Inc.', 'Google'),
 (2, 'Amazon.com, Inc.', 'Amazon'),
 (3, 'Meta Platforms, Inc.', 'Meta'),
 (4, 'Rumble Inc.', 'Rumble'),
 (5, 'Stake.com', 'Kick')
-ON CONFLICT (nro) DO UPDATE SET nome = EXCLUDED.nome, nome_fantasia = EXCLUDED.nome_fantasia;
+ON CONFLICT (tax_id) DO UPDATE SET nome = EXCLUDED.nome, nome_fantasia = EXCLUDED.nome_fantasia;
 
--- 100 Empresas de Patrocínio (NRO 6 a 105)
-INSERT INTO empresa (nro, nome, nome_fantasia)
+-- 500 Empresas de Patrocínio (NRO 6 a 505)
+INSERT INTO empresa (tax_id, nome, nome_fantasia)
 SELECT
-    n AS nro,
+    n AS tax_id,
     'Patrocinador Genérico ' || LPAD(n::text, 3, '0') AS nome,
     'PAG_' || LPAD(n::text, 3, '0') AS nome_fantasia
-FROM generate_series(6, 105) AS n
-ON CONFLICT (nro) DO UPDATE SET nome = EXCLUDED.nome, nome_fantasia = EXCLUDED.nome_fantasia;
+FROM generate_series(6, 505) AS n
+ON CONFLICT (tax_id) DO UPDATE SET nome = EXCLUDED.nome, nome_fantasia = EXCLUDED.nome_fantasia;
 
 -- 5 Plataformas (NRO 1 a 5)
 INSERT INTO plataforma (nro, nome, empresa_fundadora, empresa_responsavel, data_fund) VALUES
@@ -59,11 +59,11 @@ INSERT INTO plataforma (nro, nome, empresa_fundadora, empresa_responsavel, data_
 (5, 'Kick', 5, 5, '2022-12-06')
 ON CONFLICT (nro) DO UPDATE SET nome = EXCLUDED.nome, empresa_fundadora = EXCLUDED.empresa_fundadora;
 
--- Associações Empresa-País (Exemplo)
-INSERT INTO empresa_pais (nro_empresa, ddi_pais, id_nacional) VALUES
+-- Associações Empresa-País
+INSERT INTO empresa_pais (empresa_tax_id, ddi_pais, id_nacional) VALUES
 (1, '+1', 'US-123456789'), (1, '+55', 'BR-001'),
 (6, '+1', 'US-777'), (7, '+55', 'BR-007')
-ON CONFLICT (nro_empresa, ddi_pais) DO UPDATE SET id_nacional = EXCLUDED.id_nacional;
+ON CONFLICT (empresa_tax_id, ddi_pais) DO UPDATE SET id_nacional = EXCLUDED.id_nacional;
 
 
 -- ######################################################################################
@@ -109,10 +109,10 @@ ON CONFLICT (nick_streamer, ddi_pais) DO NOTHING;
 -- # 3. CANAIS E INSCRIÇÕES (500 Canais, 1500 Níveis, 1200 Inscrições, 200 Patrocínios)
 -- ######################################################################################
 
--- 500 Canais (Um para cada streamer - nro_canal é SERIAL)
-INSERT INTO canal (nro_canal, nome, nro_plataforma, tipo, data_criacao, nick_streamer)
+-- 500 Canais (Um para cada streamer - id_canal é SERIAL)
+INSERT INTO canal (id_canal, nome, nro_plataforma, tipo, data_criacao, nick_streamer)
 SELECT
-    n AS nro_canal,
+    gen_random_uuid() AS id_canal,
     'Canal_' || LPAD(n::text, 3, '0') AS nome,
     MOD(n - 1, 5) + 1 AS nro_plataforma,
     CASE MOD(n, 3)
@@ -123,83 +123,98 @@ SELECT
     ('2018-01-01'::DATE + (n * 5) * INTERVAL '1 day')::DATE AS data_criacao,
     'user_' || LPAD(n::text, 4, '0') AS nick_streamer
 FROM generate_series(1, 500) AS n
-ON CONFLICT (nro_canal) DO UPDATE SET nick_streamer = EXCLUDED.nick_streamer;
+ON CONFLICT (id_canal) DO UPDATE SET nick_streamer = EXCLUDED.nick_streamer;
 
 
 -- 3 Níveis para cada Canal (Total: 1500 níveis)
-INSERT INTO nivel_canal (nro_canal, nivel, valor)
+INSERT INTO nivel_canal (id_canal, nivel, valor)
 SELECT
-    c.nro_canal, v.nivel, v.valor
+    c.id_canal, v.nivel, v.valor
 FROM (
-    SELECT n AS nro_canal FROM generate_series(1, 500) AS n
+    select id_canal FROM canal
 ) AS c
 CROSS JOIN (
     VALUES ('Bronze', 4.99), ('Prata', 9.99), ('Ouro', 24.99)
 ) AS v(nivel, valor)
-ON CONFLICT (nro_canal, nivel) DO UPDATE SET valor = EXCLUDED.valor;
+ON CONFLICT (id_canal, nivel) DO UPDATE SET valor = EXCLUDED.valor;
 
 
--- 1200 Inscrições
-INSERT INTO inscricao (nro_canal, nick_membro, nivel)
+-- 1200 Inscrições (mapeando números aos UUID reais dos canais)
+WITH canal_index AS (
+    SELECT id_canal, row_number() OVER (ORDER BY nome) AS canal_seq
+    FROM canal
+)
+INSERT INTO inscricao (id_canal, nick_membro, nivel)
 SELECT
-    nro_canal,
+    ci.id_canal,
     'user_' || LPAD(membro::text, 4, '0') AS nick_membro,
     nivel
 FROM (
     -- 500 membros (user_0501 a user_1000) se inscrevem em 1 canal
     SELECT
         n AS membro,
-        MOD(n - 501, 500) + 1 AS nro_canal,
+        MOD(n - 501, 500) + 1 AS canal_seq_int,
         'Prata' AS nivel
     FROM generate_series(501, 1000) AS n
     UNION ALL
     -- 500 streamers (user_0001 a user_0500) se inscrevem em 1 canal (diferente do próprio)
     SELECT
         n AS membro,
-        MOD(n, 500) + 1 AS nro_canal,
+        MOD(n, 500) + 1 AS canal_seq_int,
         'Bronze' AS nivel
     FROM generate_series(1, 500) AS n
     UNION ALL
     -- 200 membros aleatórios (user_0001 a user_0200) se inscrevem em um segundo canal
     SELECT
         n AS membro,
-        MOD(n + 100, 500) + 1 AS nro_canal,
+        MOD(n + 100, 500) + 1 AS canal_seq_int,
         'Ouro' AS nivel
     FROM generate_series(1, 200) AS n
 ) AS t
-ON CONFLICT (nro_canal, nick_membro) DO UPDATE SET nivel = EXCLUDED.nivel;
+JOIN canal_index ci ON ci.canal_seq = t.canal_seq_int
+ON CONFLICT (id_canal, nick_membro) DO UPDATE SET nivel = EXCLUDED.nivel;
 
 
--- 200 Patrocínios (Empresas 6 a 105, 2 canais cada)
-INSERT INTO patrocinio (nro_empresa, nro_canal, valor)
-SELECT
-    nro_empresa, nro_canal,
-    (10000.00 + (nro_empresa * 50.00)) AS valor -- Valor variável
-FROM (
-    -- Patrocínio 1 (Empresas 6 a 105 nos canais 1 a 100)
+-- 200 Patrocínios (Empresas 6 a 105, 2 canais cada) usando mapeamento para UUID dos canais
+WITH canal_index AS (
+    SELECT id_canal, row_number() OVER (ORDER BY nome) AS canal_seq
+    FROM canal
+), patrocinio_base AS (
+    -- Conjunto 1: empresas 6..105 nos canais 1..100
     SELECT
-        6 + MOD(n - 1, 100) AS nro_empresa,
-        MOD(n - 1, 100) + 1 AS nro_canal
+        6 + ((n - 1) % 100) AS empresa_tax_id,
+        ((n - 1) % 100) + 1 AS canal_seq_int
     FROM generate_series(1, 100) AS n
     UNION ALL
-    -- Patrocínio 2 (Empresas 6 a 105 nos canais 101 a 200)
+    -- Conjunto 2: mesmas empresas nos canais 101..200
     SELECT
-        6 + MOD(n - 1, 100) AS nro_empresa,
-        MOD(n - 1, 100) + 101 AS nro_canal
+        6 + ((n - 1) % 100) AS empresa_tax_id,
+        ((n - 1) % 100) + 101 AS canal_seq_int
     FROM generate_series(1, 100) AS n
-) AS t
-ON CONFLICT (nro_empresa, nro_canal) DO UPDATE SET valor = EXCLUDED.valor;
+)
+INSERT INTO patrocinio (empresa_tax_id, id_canal, valor)
+SELECT
+    pb.empresa_tax_id,
+    ci.id_canal,
+    (10000.00 + (pb.empresa_tax_id * 50.00)) AS valor
+FROM patrocinio_base pb
+JOIN canal_index ci ON ci.canal_seq = pb.canal_seq_int
+ON CONFLICT (empresa_tax_id, id_canal) DO UPDATE SET valor = EXCLUDED.valor;
 
 
 -- ######################################################################################
 -- # 4. VÍDEOS E COMENTÁRIOS (200 Vídeos, 1000 Comentários)
 -- ######################################################################################
 
--- 5000 Vídeos
-INSERT INTO video (id_video, nro_canal, titulo, dataH, tema, duracao, visu_total)
+-- 5000 Vídeos (UUIDs para id_video e mapeamento de canais via índice)
+WITH canal_index AS (
+    SELECT id_canal, row_number() OVER (ORDER BY nome) AS canal_seq
+    FROM canal
+)
+INSERT INTO video (id_video, id_canal, titulo, dataH, tema, duracao, visu_total)
 SELECT
-    n AS id_video,
-    floor(random() * 500) + 1 AS nro_canal,
+    gen_random_uuid() AS id_video,
+    ci.id_canal,
     'Vídeo Teste ' || n AS titulo,
     NOW() - (n * INTERVAL '1 hour') AS dataH,
     CASE MOD(n, 3)
@@ -208,81 +223,103 @@ SELECT
         ELSE 'Tutorial'
     END AS tema,
     (MOD(n, 15) + 5) * INTERVAL '1 minute' AS duracao,
-    floor(random() * 90000) AS visu_total    
+    floor(random() * 90000) AS visu_total
 FROM generate_series(1, 5000) AS n
-ON CONFLICT (nro_canal, titulo, dataH) DO NOTHING;
+JOIN canal_index ci ON ci.canal_seq = ((n - 1) % 500) + 1
+ON CONFLICT (id_canal, titulo, dataH) DO NOTHING;
 
 -- Participa (Streamer do canal participa do próprio vídeo)
-INSERT INTO participa (id_video, nick_streamer)
+INSERT INTO participa (id_video, id_canal, nick_streamer)
 SELECT
-    v.id_video, c.nick_streamer
+    v.id_video, v.id_canal, c.nick_streamer
 FROM video v
-JOIN canal c ON v.nro_canal = c.nro_canal
-ON CONFLICT (id_video, nick_streamer) DO NOTHING;
+JOIN canal c ON v.id_canal = c.id_canal
+ON CONFLICT (id_video, id_canal, nick_streamer) DO NOTHING;
 
--- 1000 Comentários (Distribuídos em 100 vídeos - 10 comentários por vídeo)
-INSERT INTO comentario (id_comentario, id_video, nick_usuario, seq, texto, dataH)
+-- 1000 Comentários (100 vídeos, 10 por vídeo) usando mapeamento para PK composta
+WITH video_index AS (
+    SELECT id_video, id_canal, row_number() OVER (ORDER BY dataH DESC) AS vid_seq
+    FROM video
+)
+INSERT INTO comentario (id_comentario, id_video, id_canal, nick_usuario, seq, texto, dataH)
 SELECT
-    n AS id_comentario,
-    MOD(n - 1, 100) + 1 AS id_video, -- Comentários nos Vídeos 1 a 100
-    'user_' || LPAD((MOD(n - 1, 1000) + 1)::text, 4, '0') AS nick_usuario,
-    (MOD(n - 1, 10) + 1) AS seq, -- Sequencial de 1 a 10 para cada vídeo/usuário
-    'Comentário ' || n || ' sobre o vídeo ' || (MOD(n - 1, 100) + 1) AS texto,
+    gen_random_uuid() AS id_comentario,
+    vi.id_video,
+    vi.id_canal,
+    'user_' || LPAD(((MOD(n - 1, 1000) + 1))::text, 4, '0') AS nick_usuario,
+    (MOD(n - 1, 10) + 1) AS seq,
+    'Comentário ' || n || ' sobre o vídeo ' || vi.vid_seq AS texto,
     NOW() - (n * INTERVAL '10 minutes') AS dataH
 FROM generate_series(1, 1000) AS n
-ON CONFLICT (id_video, nick_usuario, seq) DO UPDATE SET texto = EXCLUDED.texto;
+JOIN video_index vi ON vi.vid_seq = ((n - 1) % 100) + 1
+ON CONFLICT (id_video, id_canal, nick_usuario, seq) DO UPDATE SET texto = EXCLUDED.texto;
 
 
 -- ######################################################################################
 -- # 5. DOAÇÕES (300 Doações, 75 de cada tipo de pagamento)
 -- ######################################################################################
 
--- 300 Doações (Associadas aos primeiros 300 comentários - id_comentario 1 a 300)
-INSERT INTO doacao (id_doacao, id_comentario, valor, seq_pg, status)
-SELECT
-    n AS id_doacao,
-    n AS id_comentario,
-    (5.00 + (MOD(n, 10) * 0.5)) AS valor, -- Valor variável entre 5.00 e 9.50
-    1 AS seq_pg,
-    'Confirmada' AS status
-FROM generate_series(1, 300) AS n
-ON CONFLICT (id_comentario, seq_pg) DO UPDATE SET valor = EXCLUDED.valor;
+START TRANSACTION;
 
--- Distribuição dos Tipos de Pagamento (300 doações / 4 tipos = 75 de cada)
 
--- Bitcoin (1 a 75)
-INSERT INTO bitcoin (id_doacao, TxID)
-SELECT
-    n AS id_doacao,
-    'TX_BTC_GEN_' || LPAD(n::text, 4, '0') AS TxID
-FROM generate_series(1, 75) AS n
-ON CONFLICT (id_doacao) DO UPDATE SET TxID = EXCLUDED.TxID;
+-- ######################################################################################
+-- # 5. DOAÇÕES (300 Doações, 75 de cada tipo de pagamento)
+-- ######################################################################################
 
--- PayPal (76 a 150)
-INSERT INTO paypal (id_doacao, IdPayPal)
-SELECT
-    n AS id_doacao,
-    'ID_PAYPAL_' || LPAD(n::text, 4, '0') AS IdPayPal
-FROM generate_series(76, 150) AS n
-ON CONFLICT (id_doacao) DO UPDATE SET IdPayPal = EXCLUDED.IdPayPal;
+WITH
+comentario_index AS (
+    SELECT id_canal, id_video, id_comentario, row_number() OVER (ORDER BY dataH DESC) AS com_seq
+    FROM comentario
+),
+doacao_insert AS (
+    INSERT INTO doacao (id_canal, id_video, id_comentario, id_doacao, valor, seq_pg, status)
+    SELECT
+        ci.id_canal,
+        ci.id_video,
+        ci.id_comentario,
+        gen_random_uuid() AS id_doacao,
+        (5.00 + (MOD(ci.com_seq, 10) * 0.5)) AS valor,
+        1 AS seq_pg,
+        CASE WHEN random() < 0.5 THEN 'Confirmada' ELSE 'Lida' END AS status
+    FROM comentario_index ci
+    WHERE ci.com_seq <= 300
+    RETURNING id_canal, id_video, id_comentario, id_doacao
+),
+doacao_classificada AS (
+    SELECT d.*, row_number() OVER () AS rn
+    FROM doacao_insert d
+),
+btc AS (
+    INSERT INTO bitcoin (id_canal, id_video, id_comentario, id_doacao, TxID)
+    SELECT id_canal, id_video, id_comentario, id_doacao, 'TX_BTC_GEN_' || LEFT(id_doacao::text, 8)
+    FROM doacao_classificada WHERE rn BETWEEN 1 AND 75
+    RETURNING 1
+),
+pp AS (
+    INSERT INTO paypal (id_canal, id_video, id_comentario, id_doacao, IdPayPal)
+    SELECT id_canal, id_video, id_comentario, id_doacao, 'ID_PAYPAL_' || LEFT(id_doacao::text, 8)
+    FROM doacao_classificada WHERE rn BETWEEN 76 AND 150
+    RETURNING 1
+),
+cc AS (
+    INSERT INTO cartao_credito (id_canal, id_video, id_comentario, id_doacao, nro, bandeira)
+    SELECT id_canal, id_video, id_comentario, id_doacao,
+           LEFT(id_doacao::text, 16) AS nro,
+           CASE MOD(rn, 3)
+               WHEN 0 THEN 'Visa'
+               WHEN 1 THEN 'Mastercard'
+               ELSE 'Elo' END AS bandeira
+    FROM doacao_classificada WHERE rn BETWEEN 151 AND 225
+    RETURNING 1
+),
+plat AS (
+    INSERT INTO mecanismo_plat (id_canal, id_video, id_comentario, id_doacao, seq_plataforma)
+    SELECT id_canal, id_video, id_comentario, id_doacao, (rn - 225)
+    FROM doacao_classificada WHERE rn BETWEEN 226 AND 300
+    RETURNING 1
+)
+SELECT 1;
+COMMIT;
 
--- Cartão de Crédito (151 a 225)
-INSERT INTO cartao_credito (id_doacao, nro, bandeira)
-SELECT
-    n AS id_doacao,
-    LPAD(n::text, 20, '4') AS nro, -- Número fictício
-    CASE MOD(n, 3)
-        WHEN 0 THEN 'Visa'
-        WHEN 1 THEN 'Mastercard'
-        ELSE 'Elo'
-    END AS bandeira
-FROM generate_series(151, 225) AS n
-ON CONFLICT (id_doacao) DO UPDATE SET nro = EXCLUDED.nro, bandeira = EXCLUDED.bandeira;
-
--- Mecanismo da Plataforma (226 a 300)
-INSERT INTO mecanismo_plat (id_doacao, seq_plataforma)
-SELECT
-    n AS id_doacao,
-    n - 225 AS seq_plataforma -- Sequencial de 1 a 75
-FROM generate_series(226, 300) AS n
-ON CONFLICT (id_doacao) DO UPDATE SET seq_plataforma = EXCLUDED.seq_plataforma;
+REFRESH MATERIALIZED VIEW MV_DOACAO_TOTAL_CANAL;
+REFRESH MATERIALIZED VIEW MV_FATURAMENTO_TOP_CANAIS;

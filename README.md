@@ -13,11 +13,9 @@ Professor: Marcos Vinicius Naves Bedo
 Alunos:
 
 - Lucas Santana Panaro
-- Rodrigo Dias
 - Rafael Dos Anjos
 - Rafaela Fonseca
 - Arthur Octávio
-- Lucca Amaral
 
 ## Passos para execução dos arquivos
 
@@ -25,7 +23,7 @@ Alunos:
 
 2 - Reconectar ao postgres selecionando o database streamerdb.
 
-3 - Executar arquivo 1.criar_tabelas.sql. Este arquivo irá gerar o schema streamerdb (se já não existir), remover as tabelas(se já existirem) e criar as tabelas necessárias.
+3 - Executar arquivo 1.criar_tabelas.sql. Este arquivo irá gerar o schema streamerdb (se já não existir), remover as tabelas (se já existirem) e criar as tabelas necessárias.
 
 4 - Executar arquivo 2.criar_views.sql.
 
@@ -39,20 +37,21 @@ Alunos:
 
 ## Criação das tabelas
 
-Iniciamos a criação das tabelas a partir do modelo relacional proposto pelo professor, e optamos por algumas adaptações, para simplificar a utilização de chaves estrangeiras.
+Iniciamos a criação das tabelas a partir do modelo relacional proposto pelo professor, e optamos por algumas adaptações, para simplificar a utilização de chaves estrangeiras. O modelo foi implementado utilizando UUIDs como chaves primárias para as tabelas principais (canal, video, comentario, doacao), e chaves compostas quando necessário, para garantir escalabilidade e integridade referencial.
+
 São elas:
 
-- Criação de um id artificial para a tabela canal. Fizemos isso, pois a chave candidata para PK teria 2 atributos e esta tabela está referenciada em 3 outras tabelas (video, patrocinio e nivel_canal).
+- Criação da PK com uuid artificial para a tabela canal. Fizemos isso, pois a chave candidata para PK teria 2 atributos e esta tabela está referenciada em 3 outras tabelas (video, patrocinio e nivel_canal).
 
-- Criação de um id artificial para a tabela vídeo. Fizemos isso, pois a chave candidata para PK teria 4 atributos e esta tabela está referenciada em 2 outras tabelas (participa e comentario).
+- Criação de um uuid artificial para a tabela vídeo, e criação da PK composta com id_canal. Fizemos isso, pois a chave candidata para PK teria 4 atributos e esta tabela está referenciada em 2 outras tabelas (participa e comentario) e, dada a grande quantidade de vídeos esperados, optamos por termos a PK como a combinação do canal e do video.
 
-- Criação de um id artificial para a tabela comentario. Fizemos isso, pois a chave candidata para PK teria 3 atributos e esta tabela está referenciada em 2 outras tabelas (doacao e comentario(referência a própria tabela)).
+- Criação de um uuid artificial para a tabela comentario, e criação da PK composta com id_canal e id_video. Fizemos isso, pois a chave candidata para PK teria 3 atributos e esta tabela está referenciada em 2 outras tabelas (doacao e comentario(referência a própria tabela)) e, dada a grande quantidade de comentários para cada vídeo esperados, optamos por termos a PK como a combinação do canal e do video.
 
-- Criação de um id artificial para a tabela doacao. Fizemos isso, pois a chave candidata para PK teria 2 atributos e esta tabela está referenciada em 4 outras tabelas (bitcoin, paypal, cartao_credito, mecanismo_plat).
+- Criação de um uuid artificial para a tabela doacao. Fizemos isso, pois a chave candidata para PK teria 2 atributos e esta tabela está referenciada em 4 outras tabelas (bitcoin, paypal, cartao_credito, mecanismo_plat), além da mesma expectativa acima da grande quantidade de dados inseridos estourarem a quantidade de uuids disponíveis.
 
-- <b>Além disso, foram criadas restrições unique na chave candidata original para todos os 3 casos acima.</b>
+- <b>Além disso, todas as FKs e PKs seguem o padrão do modelo relacional, com restrições de unicidade e not null apropriadas.</b>
 
-Foram criadas também constraints Not Null, observando cada cenário.
+Observação: Não há uso de ids artificiais sequenciais para as tabelas principais. Utilizamos UUIDs e chaves compostas para garantir unicidade e escalabilidade. Foram criadas também constraints Not Null, observando cada cenário.
 
 ## Criação das Views
 
@@ -62,35 +61,35 @@ Foram definidas **5 Visões** (3 Virtuais e 2 Materializadas) no arquivo `2.cria
 
 As **Visões Virtuais** (`VW_`) foram escolhidas para dados que podem ser filtrados ou que dependem de transações recentes (patrocínio vigente, doações recentes):
 
-* **`VW_RECEITA_MEMBROS_BRUTA`**: Calcula a receita mensal bruta por canal, somando os valores de cada nível de inscrição vigente. É essencial para as consultas que envolvem faturamento de membros (Consultas 2, 6 e 8), pois os dados de `inscricao` (membros vigentes) precisam ser lidos em tempo real.
-* **`VW_RECEITA_DOACAO_POR_VIDEO`**: Agrega o valor total de doações por vídeo. Esta visão simplifica a junção de `video`, `comentario` e `doacao`, sendo a base para as consultas de doação (Consultas 4, 7 e 8).
-* **`VW_CANAL_RECEITA_PATROCINIO`**: Simplifica a consulta de patrocínio vigente, relacionando o canal, a empresa patrocinadora e o valor do patrocínio. Utilizada nas Consultas 1, 5 e 8.
+- **`VW_RECEITA_MEMBROS_BRUTA`**: Calcula a receita mensal bruta por canal, somando os valores de cada nível de inscrição vigente. É essencial para as consultas que envolvem faturamento de membros (Consultas 2, 6 e 8), pois os dados de `inscricao` (membros vigentes) precisam ser lidos em tempo real.
+- **`VW_RECEITA_DOACAO_POR_VIDEO`**: Agrega o valor total de doações por vídeo. Esta visão simplifica a junção de `video`, `comentario` e `doacao`, sendo a base para as consultas de doação (Consultas 4, 7 e 8).
+- **`VW_CANAL_RECEITA_PATROCINIO`**: Simplifica a consulta de patrocínio vigente, relacionando o canal, a empresa patrocinadora e o valor do patrocínio. Utilizada nas Consultas 1, 5 e 8.
 
 ### Visões Materializadas (Otimização para Rankeamento Pesado)
 
-As **Visões Materializadas** (`MV_`) foram escolhidas para agregações pesadas que mudam com pouca frequência (como o total de doações ou o faturamento total), otimizando as consultas de ranking (top *k* canais):
+As **Visões Materializadas** (`MV_`) foram escolhidas para agregações pesadas que mudam com pouca frequência (como o total de doações ou o faturamento total), otimizando as consultas de ranking (top _k_ canais):
 
-* **`MV_DOACAO_TOTAL_CANAL`**: Calcula a soma total de doações recebidas por cada canal. A agregação de doações ao longo de todos os vídeos é uma operação custosa, e materializá-la otimiza a Consulta 7 (ranking de doações) e a composição da `MV_FATURAMENTO_TOP_CANAIS`.
-* **`MV_FATURAMENTO_TOP_CANAIS`**: Combina as três fontes de receita (Patrocínio, Membros, Doações) em um único registro de faturamento total para cada canal. Esta agregação é a mais custosa do sistema e materializá-la garante a máxima performance para a Consulta 8 (ranking de faturamento total). O cálculo utiliza as views virtuais anteriores.
+- **`MV_DOACAO_TOTAL_CANAL`**: Calcula a soma total de doações recebidas por cada canal. A agregação de doações ao longo de todos os vídeos é uma operação custosa, e materializá-la otimiza a Consulta 7 (ranking de doações) e a composição da `MV_FATURAMENTO_TOP_CANAIS`.
+- **`MV_FATURAMENTO_TOP_CANAIS`**: Combina as três fontes de receita (Patrocínio, Membros, Doações) em um único registro de faturamento total para cada canal. Esta agregação é a mais custosa do sistema e materializá-la garante a máxima performance para a Consulta 8 (ranking de faturamento total). O cálculo utiliza as views virtuais anteriores.
 
 ## Criação de Indices
 
-Para otimizar o desempenho das buscas e das operações de junção nas consultas obrigatórias (principalmente as que envolvem faturamento e listagem), foram definidos **5 Índices de Apoio** no arquivo `3.criar_indexes.sql`. A escolha destes índices visou minimizar o *overhead* de inserção, focando em colunas que são chaves estrangeiras ou que são frequentemente usadas em filtros e ordenações:
+Para otimizar o desempenho das buscas e das operações de junção nas consultas obrigatórias (principalmente as que envolvem faturamento e listagem), foram definidos **5 Índices de Apoio** no arquivo `3.criar_indexes.sql`. A escolha destes índices visou minimizar o _overhead_ de inserção, focando em colunas que são chaves estrangeiras ou que são frequentemente usadas em filtros e ordenações:
 
-* **`idx_patrocinio_nro_empresa`**: Criado na coluna `nro_empresa` da tabela `patrocinio`. Otimiza as junções com a tabela `empresa` e acelera os filtros por empresa patrocinadora (essencial para as Consultas 1, 5 e 8).
-* **`idx_inscricao_nick_membro`**: Criado na coluna `nick_membro` da tabela `inscricao`. Melhora o acesso direto e o agrupamento dos dados de inscrição por usuário, sendo crucial para a Consulta 2 e para o cálculo do faturamento de membros.
-* **`idx_doacao_status_idcomentario`**: Este é um índice **composto** nas colunas `status` e `id_comentario` da tabela `doacao`. Ele permite que o SGBD filtre rapidamente doações com o status 'LIDA' e, em seguida, utilize o `id_comentario` para fazer a junção com a tabela `comentario` e agregar valores por vídeo (Consulta 4).
-* **`idx_video_nro_canal`**: Criado na chave estrangeira `nro_canal` da tabela `video`. Acelera a busca por todos os vídeos pertencentes a um canal específico, o que é fundamental para as agregações de doações por canal (Consultas 7 e 8).
-* **`idx_usuario_email_pais`**: Este é um índice **composto** nas colunas `email` e `pais_residencia` da tabela `usuario`. Foi escolhido como otimização geral para buscas que envolvem filtros combinados por localização e/ou `email`, melhorando o acesso aos dados principais dos usuários.
+- **`idx_patrocinio_empresa_tax_id`**: Criado na coluna `empresa_tax_id` da tabela `patrocinio`. Otimiza as junções com a tabela `empresa` e acelera os filtros por empresa patrocinadora (essencial para as Consultas 1, 5 e 8).
+- **`idx_inscricao_nick_membro`**: Criado na coluna `nick_membro` da tabela `inscricao`. Melhora o acesso direto e o agrupamento dos dados de inscrição por usuário, sendo crucial para a Consulta 2 e para o cálculo do faturamento de membros.
+- **`idx_doacao_status_idcomentario`**: Este é um índice **composto** nas colunas `status` e `id_comentario` da tabela `doacao`. Ele permite que o SGBD filtre rapidamente doações com o status 'LIDA' e, em seguida, utilize o `id_comentario` para fazer a junção com a tabela `comentario` e agregar valores por vídeo (Consulta 4).
+- **`idx_video_id_canal`**: Criado na chave estrangeira `id_canal` da tabela `video`. Acelera a busca por todos os vídeos pertencentes a um canal específico, o que é fundamental para as agregações de doações por canal (Consultas 7 e 8).
+- **`idx_usuario_email_pais`**: Este é um índice **composto** nas colunas `email` e `pais_residencia` da tabela `usuario`. Foi escolhido como otimização geral para buscas que envolvem filtros combinados por localização e/ou `email`, melhorando o acesso aos dados principais dos usuários.
 
 ## Criação de Triggers
 
 Foram implementadas **4 Triggers** no arquivo `4.criar_triggers.sql` para garantir a consistência e a integridade do banco de dados, conforme as regras de negócio e os requisitos de atributos derivados:
 
-* **`tg_user_count` (Função: `fn_update_user_count`)**: Responsável por manter a consistência do atributo derivado `qtd_users` na tabela `plataforma`. Esta trigger é acionada **APÓS** uma inserção ou remoção na tabela `plataforma_usuario`, atualizando automaticamente o contador de usuários na plataforma correspondente.
-* **`tg_view_count` (Função: `fn_update_view_count`)**: Responsável por manter a consistência do atributo derivado `qtd_visualizacoes` na tabela `canal`. É acionada **APÓS** uma inserção ou remoção na tabela `video`, somando ou subtraindo o `visu_total` do canal relacionado.
-* **`tg_check_status_doacao` (Função: `fn_check_status_doacao`)**: Atua **ANTES** de qualquer inserção ou atualização na tabela `doacao`. Esta trigger garante que o campo `status` só receba valores válidos (como 'RECUSADA', 'RECEBIDA', 'LIDA' ou 'CONFIRMADA'), atendendo a um requisito de consistência de dados do projeto.
-* **`tg_check_streamer` (Função: `fn_check_streamer_exists`)**: Atua **ANTES** da inserção na tabela `streamer_pais`. Sua função é garantir a integridade referencial e a lógica de negócio, assegurando que o `nick_streamer` a ser inserido já exista na tabela `usuario` (validando o subtipo).
+- **`tg_user_count` (Função: `fn_update_user_count`)**: Responsável por manter a consistência do atributo derivado `qtd_users` na tabela `plataforma`. Esta trigger é acionada **APÓS** uma inserção ou remoção na tabela `plataforma_usuario`, atualizando automaticamente o contador de usuários na plataforma correspondente.
+- **`tg_view_count` (Função: `fn_update_view_count`)**: Responsável por manter a consistência do atributo derivado `qtd_visualizacoes` na tabela `canal`. É acionada **APÓS** uma inserção ou remoção na tabela `video`, somando ou subtraindo o `visu_total` do canal relacionado. --A ser substituida por uma view materializada com atualização via cronjob.
+- **`tg_check_status_doacao` (Função: `fn_check_status_doacao`)**: Atua **ANTES** de qualquer inserção ou atualização na tabela `doacao`. Esta trigger garante que o campo `status` só receba valores válidos (como 'RECUSADA', 'RECEBIDA', 'LIDA' ou 'CONFIRMADA'), atendendo a um requisito de consistência de dados do projeto.
+- **`tg_check_streamer` (Função: `fn_check_streamer_exists`)**: Atua **ANTES** da inserção na tabela `streamer_pais`. Sua função é garantir a integridade referencial e a lógica de negócio, assegurando que o `nick_streamer` a ser inserido já exista na tabela `usuario` (validando o subtipo).
 
 ## Criação dos dados artificiais
 
@@ -119,27 +118,28 @@ Sem funções para criação da massa, gere todos os dados explicitamente.
 Retorne apenas um script SQL.
 {arquivo criar_tabelas.sql}
 ```
-O retorno obtido foi salvo no arquivo popular_tabelas_dados_ficticios.sql.
+
+O retorno obtido foi adaptado para executar corretamente e salvo no arquivo popular_tabelas_dados_ficticios.sql.
 
 ## Consultas
 
 Todas as consultas foram implementadas como **Functions** no arquivo `6.executar_consultas.sql`, utilizando a linguagem **PL/pgSQL** ou **SQL** (conforme aplicável) e fazendo uso das Views e Índices criados para garantir alta performance.
 
-As funções com parâmetro `DEFAULT NULL` ou `k` atendem ao requisito de ter parâmetros opcionais ou de listar os *top k* elementos.
+As funções com parâmetro `DEFAULT NULL` ou `k` atendem ao requisito de ter parâmetros opcionais ou de listar os _top k_ elementos.
 
 ### 1. Detalhamento das Funções Parametrizadas (Com Filtro Opcional)
 
-* **Consulta 1: Canais Patrocinados** (`canais_patrocinados(_nro_empresa INT DEFAULT NULL)`): Lista canais e o valor do patrocínio vigente. A função otimiza o filtro por empresa patrocinadora, retornando todos os patrocínios se `_nro_empresa` for nulo.
-* **Consulta 2: Valor Desembolsado por Membro** (`fn_membros_valor_desembolsado(_nick_usuario VARCHAR DEFAULT NULL)`): Calcula a quantidade de canais que cada usuário é membro e a soma do valor mensal desembolsado por ele. Permite filtro opcional para focar em um `_nick_usuario` específico.
-* **Consulta 3: Doações Recebidas por Canal** (`fn_canais_doacao_recebida(_nro_canal INTEGER DEFAULT NULL)`): Lista e ordena os canais que receberam doações. **Otimização:** Utiliza a **`MV_DOACAO_TOTAL_CANAL`** para acesso rápido aos valores totais agregados e permite filtro opcional por `_nro_canal`.
-* **Consulta 4: Soma de Doações Lidas por Vídeo** (`fn_doacoes_lidas_por_video(_id_video INTEGER DEFAULT NULL)`): Lista a soma das doações geradas por comentários cujo `status` é **'LIDA'**, agregadas por vídeo. **Otimização:** A filtragem por `status = 'LIDA'` é acelerada pelo índice **`idx_doacao_status_idcomentario`**, permitindo também filtro opcional por `_id_video`.
+- **Consulta 1: Canais Patrocinados** (`canais_patrocinados(_empresa_tax_id VARCHAR DEFAULT NULL)`): Lista canais e o valor do patrocínio vigente. A função otimiza o filtro por empresa patrocinadora, retornando todos os patrocínios se `_empresa_tax_id` for nulo.
+- **Consulta 2: Valor Desembolsado por Membro** (`fn_membros_valor_desembolsado(_nick_usuario VARCHAR DEFAULT NULL)`): Calcula a quantidade de canais que cada usuário é membro e a soma do valor mensal desembolsado por ele. Permite filtro opcional para focar em um `_nick_usuario` específico.
+- **Consulta 3: Doações Recebidas por Canal** (`fn_canais_doacao_recebida(_id_canal UUID DEFAULT NULL)`): Lista e ordena os canais que receberam doações. **Otimização:** Utiliza a **`MV_DOACAO_TOTAL_CANAL`** para acesso rápido aos valores totais agregados e permite filtro opcional por `_id_canal`.
+- **Consulta 4: Soma de Doações Lidas por Vídeo** (`fn_doacoes_lidas_por_video(_id_video UUID DEFAULT NULL)`): Lista a soma das doações geradas por comentários cujo `status` é **'LIDA'**, agregadas por vídeo. **Otimização:** A filtragem por `status = 'LIDA'` é acelerada pelo índice **`idx_doacao_status_idcomentario`**, permitindo também filtro opcional por `_id_video`.
 
 ### 2. Detalhamento das Funções de Ranking (Top K)
 
-* **Consulta 5: Top K Patrocínio** (`fn_top_k_patrocinio(k INTEGER)`): Lista e ordena os **k** canais com maior valor de patrocínio. **Otimização:** Usa a **`VW_CANAL_RECEITA_PATROCINIO`** para dados em tempo real e aplica `ORDER BY` e `LIMIT k`.
-* **Consulta 6: Top K Aportes de Membros** (`fn_top_k_membros(k INTEGER)`): Lista e ordena os **k** canais com maior receita de aportes mensais de membros. **Otimização:** Utiliza a **`VW_RECEITA_MEMBROS_BRUTA`** e aplica `ORDER BY` e `LIMIT k`.
-* **Consulta 7: Top K Doações Recebidas** (`fn_top_k_doacoes(k INTEGER)`): Lista e ordena os **k** canais que mais receberam doações (total acumulado). **Otimização:** Executa o `REFRESH MATERIALIZED VIEW MV_DOACAO_TOTAL_CANAL` para garantir a atualização dos dados antes de rankear com `ORDER BY` e `LIMIT k`.
-* **Consulta 8: Top K Faturamento Total** (`fn_top_k_faturamento_total(k INTEGER)`): Lista e ordena os **k** canais que mais faturam, considerando as três fontes de receita (Patrocínio, Membros e Doações). **Otimização:** Executa o `REFRESH MATERIALIZED VIEW MV_FATURAMENTO_TOP_CANAIS` e rankeia o faturamento total agregado.
+- **Consulta 5: Top K Patrocínio** (`fn_top_k_patrocinio(k INTEGER)`): Lista e ordena os **k** canais com maior valor de patrocínio. **Otimização:** Usa a **`VW_CANAL_RECEITA_PATROCINIO`** para dados em tempo real e aplica `ORDER BY` e `LIMIT k`.
+- **Consulta 6: Top K Aportes de Membros** (`fn_top_k_membros(k INTEGER)`): Lista e ordena os **k** canais com maior receita de aportes mensais de membros. **Otimização:** Utiliza a **`VW_RECEITA_MEMBROS_BRUTA`** e aplica `ORDER BY` e `LIMIT k`.
+- **Consulta 7: Top K Doações Recebidas** (`fn_top_k_doacoes(k INTEGER)`): Lista e ordena os **k** canais que mais receberam doações (total acumulado). **Otimização:** Executa o `REFRESH MATERIALIZED VIEW MV_DOACAO_TOTAL_CANAL` para garantir a atualização dos dados antes de rankear com `ORDER BY` e `LIMIT k`.
+- **Consulta 8: Top K Faturamento Total** (`fn_top_k_faturamento_total(k INTEGER)`): Lista e ordena os **k** canais que mais faturam, considerando as três fontes de receita (Patrocínio, Membros e Doações). **Otimização:** Executa o `REFRESH MATERIALIZED VIEW MV_FATURAMENTO_TOP_CANAIS` e rankeia o faturamento total agregado.
 
 ## Perguntas Revisão parcial:
 
@@ -180,9 +180,9 @@ as $$
 
 ```
 
-5 - **Chave Composta `(nro_canal, nivel)`:** Na tabela `inscricao`, a chave estrangeira faz referência a `(nro_canal, nivel)` da tabela `nivel_canal`. Embora `(nro_canal, nivel)` seja a `PRIMARY KEY` de `nivel_canal`, **não seria mais eficiente** criar uma chave primária artificial (`id_nivel_canal` SERIAL) em `nivel_canal` para ser referenciada como FK simples na tabela `inscricao`, em vez de uma FK composta, melhorando a velocidade de *join*?
+5 - **Chave Composta `(nro_canal, nivel)`:** Na tabela `inscricao`, a chave estrangeira faz referência a `(nro_canal, nivel)` da tabela `nivel_canal`. Embora `(nro_canal, nivel)` seja a `PRIMARY KEY` de `nivel_canal`, **não seria mais eficiente** criar uma chave primária artificial (`id_nivel_canal` SERIAL) em `nivel_canal` para ser referenciada como FK simples na tabela `inscricao`, em vez de uma FK composta, melhorando a velocidade de _join_?
 
-6 - **Restrição de Domínio (`tipo` e `status`):** Conforme a Pergunta 2 do *README*, campos como `canal.tipo` (`privado`, `público`, `misto`) e `doacao.status` (`recusado`, `recebido`, `lido`) **devem ter restrição de domínio na camada de BD**. Embora a validação de `status` tenha sido feita via **Trigger**, a migração para o tipo nativo **`ENUM`** do PostgreSQL **não seria a solução mais canônica e performática** para garantir a validade dos dados sem o *overhead* de `TRIGGER` para cada inserção/atualização?
+6 - **Restrição de Domínio (`tipo` e `status`):** Conforme a Pergunta 2 do _README_, campos como `canal.tipo` (`privado`, `público`, `misto`) e `doacao.status` (`recusado`, `recebido`, `lido`) **devem ter restrição de domínio na camada de BD**. Embora a validação de `status` tenha sido feita via **Trigger**, a migração para o tipo nativo **`ENUM`** do PostgreSQL **não seria a solução mais canônica e performática** para garantir a validade dos dados sem o _overhead_ de `TRIGGER` para cada inserção/atualização?
 
 7 - **Precisão em Conversão de Moeda:** O campo `conversao.fator_conversao_dolar` é um `NUMERIC(10, 4)`. Dada a volatilidade do mercado e a necessidade de alta precisão em operações financeiras, **a precisão de 4 casas decimais é suficiente** ou deveríamos considerar um `NUMERIC(18, 8)` ou superior, para garantir que os cálculos de conversão para dólar não introduzam erros de arredondamento?
 
@@ -190,5 +190,4 @@ as $$
 
 9 - **Uso de Views Materializadas e Concorrência:** As Views Materializadas (`MV_DOACAO_TOTAL_CANAL`, `MV_FATURAMENTO_TOP_CANAIS`) são atualizadas dentro das Functions de consulta (`C7` e `C8`). Dada a possibilidade de `REFRESH MATERIALIZED VIEW` bloquear leituras, **não seria obrigatório** adicionar a cláusula `CONCURRENTLY` e um `UNIQUE INDEX` na `MV` para evitar bloqueios em ambiente de produção, visto que o Faturamento Total é um cálculo pesado?
 
-10 - **Otimização do `search_path`:** O comando `SET search_path TO streamerdb;` é repetido no início de *cada* função e trigger. **Isso é necessário ou há uma maneira mais eficiente** de configurar o *schema* padrão globalmente ou por conexão, minimizando a repetição do comando no código procedural?
-
+10 - **Otimização do `search_path`:** O comando `SET search_path TO streamerdb;` é repetido no início de _cada_ função e trigger. **Isso é necessário ou há uma maneira mais eficiente** de configurar o _schema_ padrão globalmente ou por conexão, minimizando a repetição do comando no código procedural?
