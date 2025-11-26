@@ -1,27 +1,29 @@
-create schema if not exists streamerdb;
-set search_path to streamerdb;
+CREATE SCHEMA IF NOT EXISTS streamerdb;
+SET search_path TO streamerdb;
 
-drop table if exists empresa cascade;
-drop table if exists plataforma cascade;
-drop table if exists conversao cascade;
-drop table if exists pais cascade;
-drop table if exists usuario cascade;
-drop table if exists plataforma_usuario cascade;
-drop table if exists streamer_pais cascade;
-drop table if exists empresa_pais cascade;
-drop table if exists canal cascade;
-drop table if exists patrocinio cascade;
-drop table if exists nivel_canal cascade;
-drop table if exists inscricao cascade;
-drop table if exists video cascade;
-drop table if exists participa cascade;
-drop table if exists comentario cascade;
-drop table if exists doacao cascade;
-drop table if exists bitcoin cascade;
-drop table if exists paypal cascade;
-drop table if exists cartao_credito cascade;
-drop table if exists mecanismo_plat cascade;
+-- Drops de segurança
+DROP TABLE IF EXISTS empresa CASCADE;
+DROP TABLE IF EXISTS plataforma CASCADE;
+DROP TABLE IF EXISTS conversao CASCADE;
+DROP TABLE IF EXISTS pais CASCADE;
+DROP TABLE IF EXISTS usuario CASCADE;
+DROP TABLE IF EXISTS plataforma_usuario CASCADE;
+DROP TABLE IF EXISTS streamer_pais CASCADE;
+DROP TABLE IF EXISTS empresa_pais CASCADE;
+DROP TABLE IF EXISTS canal CASCADE;
+DROP TABLE IF EXISTS patrocinio CASCADE;
+DROP TABLE IF EXISTS nivel_canal CASCADE;
+DROP TABLE IF EXISTS inscricao CASCADE;
+DROP TABLE IF EXISTS video CASCADE;
+DROP TABLE IF EXISTS participa CASCADE;
+DROP TABLE IF EXISTS comentario CASCADE;
+DROP TABLE IF EXISTS doacao CASCADE;
+DROP TABLE IF EXISTS bitcoin CASCADE;
+DROP TABLE IF EXISTS paypal CASCADE;
+DROP TABLE IF EXISTS cartao_credito CASCADE;
+DROP TABLE IF EXISTS mecanismo_plat CASCADE;
 
+-- Tabelas
 CREATE TABLE empresa (
     tax_id        VARCHAR(50) PRIMARY KEY,
     nome          VARCHAR(100) NOT NULL,
@@ -31,7 +33,7 @@ CREATE TABLE empresa (
 CREATE TABLE plataforma (
     nro             SERIAL PRIMARY KEY,
     nome            VARCHAR(100) UNIQUE NOT NULL,
-    qtd_users       INTEGER DEFAULT 0,       -- Atributo derivado (pode ser atualizado por TRIGGER)
+    qtd_users       INTEGER DEFAULT 0,
     empresa_fundadora    VARCHAR(50) NOT NULL,
     empresa_responsavel   VARCHAR(50) NOT NULL,
     data_fund       DATE NOT NULL,
@@ -96,7 +98,6 @@ CREATE TABLE canal (
     tipo                VARCHAR(50),
     data_criacao        DATE NOT NULL,
     desc_canal          TEXT,
-    qtd_visualizacoes   BIGINT DEFAULT 0,   -- Atributo derivado (pode ser atualizado por TRIGGER)
     nick_streamer       VARCHAR(50) NOT NULL,
     UNIQUE (nome, nro_plataforma),
     FOREIGN KEY (nro_plataforma) REFERENCES plataforma(nro),
@@ -112,7 +113,6 @@ CREATE TABLE patrocinio (
     FOREIGN KEY (id_canal) REFERENCES canal(id_canal)
 );
 
-
 CREATE TABLE nivel_canal (
     id_canal        UUID NOT NULL,
     nivel           VARCHAR(50) NOT NULL,
@@ -121,7 +121,6 @@ CREATE TABLE nivel_canal (
     PRIMARY KEY (id_canal, nivel),
     FOREIGN KEY (id_canal) REFERENCES canal(id_canal)
 );
-
 
 CREATE TABLE inscricao (
     id_canal        UUID NOT NULL,
@@ -192,6 +191,7 @@ CREATE TABLE bitcoin (
     id_comentario   UUID NOT NULL,
     id_doacao       UUID NOT NULL,
     TxID        VARCHAR(100) UNIQUE NOT NULL,
+    PRIMARY KEY (id_canal, id_video, id_comentario, id_doacao),
     FOREIGN KEY (id_canal,id_video, id_comentario,id_doacao) REFERENCES doacao(id_canal,id_video, id_comentario,id_doacao)
 );
 

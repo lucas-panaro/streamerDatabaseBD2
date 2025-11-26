@@ -1,18 +1,16 @@
--- CONSULTA 01
-create or replace function canais_patrocinados(_empresa_tax_id varchar(50) default null)
-returns table (nome_canal varchar, valor numeric)
-as $$
-	select c.nome, p.valor
-	from canal c
-	inner join patrocinio p on c.id_canal = p.id_canal
-	where _empresa_tax_id is null or p.empresa_tax_id = _empresa_tax_id
-	$$ language sql;
-
-select * from canais_patrocinados('12');
-
 SET search_path TO streamerdb;
 
--- CONSULTA 02
+-- CONSULTA 01: Canais Patrocinados (Filtro por tax_id da empresa - VARCHAR)
+CREATE OR REPLACE FUNCTION canais_patrocinados(_empresa_tax_id varchar(50) default null)
+RETURNS TABLE (nome_canal varchar, valor numeric)
+AS $$
+    SELECT c.nome, p.valor
+    FROM canal c
+    INNER JOIN patrocinio p ON c.id_canal = p.id_canal
+    WHERE _empresa_tax_id IS NULL OR p.empresa_tax_id = _empresa_tax_id
+$$ LANGUAGE sql;
+
+-- CONSULTA 02: Membros e Valor (Sem mudanças, usa id_canal UUID internamente)
 CREATE OR REPLACE FUNCTION fn_membros_valor_desembolsado(_nick_usuario VARCHAR(50) DEFAULT NULL)
 RETURNS TABLE (
     nick_membro VARCHAR,
@@ -40,10 +38,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-select * from fn_membros_valor_desembolsado();
-select * from fn_membros_valor_desembolsado('user_0189');
-
--- CONSULTA 03
+-- CONSULTA 03: Doações por Canal (Parâmetro UUID)
 CREATE OR REPLACE FUNCTION fn_canais_doacao_recebida(_id_canal uuid DEFAULT NULL)
 RETURNS TABLE (
     id_canal uuid,
@@ -68,9 +63,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-select * from fn_canais_doacao_recebida();
-
--- CONSULTA 04
+-- CONSULTA 04: Doações Lidas (Usa tabelas base, não view removida)
 CREATE OR REPLACE FUNCTION fn_doacoes_lidas_por_video(_id_video uuid DEFAULT NULL)
 RETURNS TABLE (
     id_canal uuid,
@@ -89,8 +82,8 @@ BEGIN
         v.titulo AS titulo_video,
         COALESCE(SUM(d.valor), 0.00) AS soma_doacoes_lidas
     FROM video v
-    JOIN comentario cm ON v.id_video = cm.id_video and v.id_canal = cm.id_canal
-    JOIN doacao d ON cm.id_comentario = d.id_comentario and cm.id_video = d.id_video and cm.id_canal = d.id_canal
+    JOIN comentario cm ON v.id_video = cm.id_video AND v.id_canal = cm.id_canal
+    JOIN doacao d ON cm.id_comentario = d.id_comentario AND cm.id_video = d.id_video AND cm.id_canal = d.id_canal
     WHERE
         UPPER(d.status) = 'LIDA'
         AND (_id_video IS NULL OR v.id_video = _id_video)
@@ -101,11 +94,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-
-select * from fn_doacoes_lidas_por_video();
-
-
--- CONSULTA 05
+-- CONSULTA 05: Top K Patrocínio (Usa View Virtual)
 CREATE OR REPLACE FUNCTION fn_top_k_patrocinio(k INTEGER)
 RETURNS TABLE (
     posicao BIGINT,
@@ -128,10 +117,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-select * from fn_top_k_patrocinio(1);
-
-
--- CONSULTA 06
+-- CONSULTA 06: Top K Membros (Usa View Virtual)
 CREATE OR REPLACE FUNCTION fn_top_k_membros(k INTEGER)
 RETURNS TABLE (
     posicao BIGINT,
@@ -154,10 +140,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-select * from fn_top_k_membros(1);
-
-
--- CONSULTA 07
+-- CONSULTA 07: Top K Doações (Usa View Materializada + Refresh)
 CREATE OR REPLACE FUNCTION fn_top_k_doacoes(k INTEGER)
 RETURNS TABLE (
     posicao BIGINT,
@@ -184,9 +167,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-select * from fn_top_k_doacoes(1);
-
--- CONSULTA 08
+-- CONSULTA 08: Top K Faturamento (Usa View Materializada + Refresh)
 CREATE OR REPLACE FUNCTION fn_top_k_faturamento_total(k INTEGER)
 RETURNS TABLE (
     posicao BIGINT,
@@ -210,5 +191,3 @@ BEGIN
     LIMIT k;
 END;
 $$ LANGUAGE plpgsql;
-
-select * from fn_top_k_faturamento_total(1);
