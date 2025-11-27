@@ -1,16 +1,23 @@
-SET search_path TO streamerdb;
-
--- CONSULTA 01: Canais Patrocinados (Filtro por tax_id da empresa - VARCHAR)
-CREATE OR REPLACE FUNCTION canais_patrocinados(_empresa_tax_id varchar(50) default null)
+-- CONSULTA 01: Canais Patrocinados
+CREATE OR REPLACE FUNCTION canais_patrocinados(_empresa_nome varchar default null, _empresa_tax_id varchar(50) default null)
 RETURNS TABLE (nome_canal varchar, valor numeric)
 AS $$
     SELECT c.nome, p.valor
     FROM canal c
     INNER JOIN patrocinio p ON c.id_canal = p.id_canal
-    WHERE _empresa_tax_id IS NULL OR p.empresa_tax_id = _empresa_tax_id
+	INNER JOIN empresa e on e.id_empresa = p.id_empresa
+    WHERE 1=1
+	AND (_empresa_tax_id IS NULL OR e.tax_id = _empresa_tax_id)
+	AND (_empresa_nome IS NULL OR e.nome = _empresa_nome)
 $$ LANGUAGE sql;
 
--- CONSULTA 02: Membros e Valor (Sem mudanças, usa id_canal UUID internamente)
+-- Possível efetuar busca por nome da empresa
+select * from canais_patrocinados('Patrocinador Genérico 584');
+
+-- Possível efetuar busca por CNPJ da empresa
+select * from canais_patrocinados(null, '584');
+
+-- CONSULTA 02
 CREATE OR REPLACE FUNCTION fn_membros_valor_desembolsado(_nick_usuario VARCHAR(50) DEFAULT NULL)
 RETURNS TABLE (
     nick_membro VARCHAR,
@@ -19,29 +26,31 @@ RETURNS TABLE (
 )
 AS $$
 BEGIN
-    SET search_path TO streamerdb;
-
     RETURN QUERY
     SELECT
-        i.nick_membro,
+        u.nick,
         COUNT(i.id_canal) AS qtd_canais_membro,
         COALESCE(SUM(nc.valor), 0.00) AS valor_mensal_total
     FROM inscricao i
     INNER JOIN nivel_canal nc 
-        ON i.id_canal = nc.id_canal AND i.nivel = nc.nivel
+        ON i.id_plataforma = nc.id_plataforma AND i.id_canal = nc.id_canal AND i.nivel = nc.nivel
+	INNER JOIN  usuario u 
+		ON i.id_usuario = u.id_usuario
     WHERE 
-        _nick_usuario IS NULL OR i.nick_membro = _nick_usuario
+        _nick_usuario IS NULL OR u.nick = _nick_usuario
     GROUP BY
-        i.nick_membro
+        u.nick
     ORDER BY
         valor_mensal_total DESC;
 END;
 $$ LANGUAGE plpgsql;
 
--- CONSULTA 03: Doações por Canal (Parâmetro UUID)
-CREATE OR REPLACE FUNCTION fn_canais_doacao_recebida(_id_canal uuid DEFAULT NULL)
+select * from fn_membros_valor_desembolsado();
+
+-- CONSULTA 03
+CREATE OR REPLACE FUNCTION fn_canais_doacao_recebida(_nome_plataforma varchar DEFAULT NULL, _nome_canal varchar DEFAULT NULL)
 RETURNS TABLE (
-    id_canal uuid,
+    nome_plataforma VARCHAR,
     nome_canal VARCHAR,
     soma_doacoes NUMERIC
 )
@@ -51,76 +60,101 @@ BEGIN
 
     RETURN QUERY
     SELECT
-        mv.id_canal,
+        mv.nome_plataforma,
         mv.nome_canal,
         mv.total_doacao_bruta AS soma_doacoes
     FROM MV_DOACAO_TOTAL_CANAL mv
     WHERE
         mv.total_doacao_bruta > 0
-        AND (_id_canal IS NULL OR mv.id_canal = _id_canal)
+        AND (_nome_plataforma IS NULL OR mv.nome_plataforma = _nome_plataforma)
+        AND (_nome_canal IS NULL OR mv.nome_canal = _nome_canal)
     ORDER BY
         soma_doacoes DESC;
 END;
 $$ LANGUAGE plpgsql;
 
--- CONSULTA 04: Doações Lidas (Usa tabelas base, não view removida)
-CREATE OR REPLACE FUNCTION fn_doacoes_lidas_por_video(_id_video uuid DEFAULT NULL)
+select * from fn_canais_doacao_recebida();
+
+-- CONSULTA 04
+CREATE OR REPLACE FUNCTION fn_doacoes_lidas_por_video(_nome_plataforma varchar DEFAULT NULL, _nome_canal varchar DEFAULT NULL, _titulo_video varchar DEFAULT NULL)
 RETURNS TABLE (
-    id_canal uuid,
-    id_video uuid,
+    nome_plataforma varchar,
+    nome_canal varchar,
     titulo_video VARCHAR,
     soma_doacoes_lidas NUMERIC
 )
 AS $$
-BEGIN
-    SET search_path TO streamerdb;
-
+BEGIN   
     RETURN QUERY
     SELECT
-        v.id_canal,
-        v.id_video,
+		p.nome,
+        c.nome,
         v.titulo AS titulo_video,
         COALESCE(SUM(d.valor), 0.00) AS soma_doacoes_lidas
     FROM video v
-    JOIN comentario cm ON v.id_video = cm.id_video AND v.id_canal = cm.id_canal
-    JOIN doacao d ON cm.id_comentario = d.id_comentario AND cm.id_video = d.id_video AND cm.id_canal = d.id_canal
+	INNER JOIN canal c on v.id_canal = c.id_canal
+	INNER JOIN plataforma p on v.id_plataforma = p.id_plataforma
+    JOIN comentario cm ON 
+		v.id_plataforma = cm.id_plataforma and
+		v.id_video = cm.id_video and 	
+		v.id_canal = cm.id_canal
+    JOIN doacao d ON 
+		cm.id_plataforma = d.id_plataforma and
+		cm.id_canal = d.id_canal and
+		cm.id_video = d.id_video and 
+		cm.id_comentario = d.id_comentario  	
     WHERE
         UPPER(d.status) = 'LIDA'
-        AND (_id_video IS NULL OR v.id_video = _id_video)
+        AND (_nome_plataforma IS NULL OR p.nome = _nome_plataforma)
+        AND (_nome_canal IS NULL OR c.nome = _nome_canal)
+		AND (_titulo_video IS NULL OR v.titulo = _titulo_video)
     GROUP BY
-        v.id_canal, v.id_video, v.titulo
+        p.nome, c.nome, v.titulo
     ORDER BY
         soma_doacoes_lidas DESC;
 END;
 $$ LANGUAGE plpgsql;
 
--- CONSULTA 05: Top K Patrocínio (Usa View Virtual)
-CREATE OR REPLACE FUNCTION fn_top_k_patrocinio(k INTEGER)
+
+select * from fn_doacoes_lidas_por_video();
+select * from fn_doacoes_lidas_por_video('YouTube');
+
+
+
+-- CONSULTA 05
+CREATE OR REPLACE FUNCTION fn_top_k_patrocinio(k INTEGER, _nome_plataforma varchar DEFAULT NULL)
 RETURNS TABLE (
     posicao BIGINT,
+    nome_plataforma VARCHAR,
     nome_canal VARCHAR,
     valor_patrocinio NUMERIC
 )
 AS $$
 BEGIN
-    SET search_path TO streamerdb;
-
     RETURN QUERY
     SELECT
         ROW_NUMBER() OVER (ORDER BY vcp.valor_patrocinio DESC) AS posicao,
+		vcp.nome_plataforma,
         vcp.nome_canal,
         vcp.valor_patrocinio
     FROM VW_CANAL_RECEITA_PATROCINIO vcp
+	WHERE 1=1
+	AND (_nome_plataforma IS NULL OR vcp.nome_plataforma = _nome_plataforma)
     ORDER BY
         valor_patrocinio DESC
     LIMIT k;
 END;
 $$ LANGUAGE plpgsql;
 
--- CONSULTA 06: Top K Membros (Usa View Virtual)
-CREATE OR REPLACE FUNCTION fn_top_k_membros(k INTEGER)
+select * from fn_top_k_patrocinio(1);
+select * from fn_top_k_patrocinio(1, 'YouTube');
+
+
+-- CONSULTA 06
+CREATE OR REPLACE FUNCTION fn_top_k_membros(k INTEGER, _nome_plataforma varchar DEFAULT NULL)
 RETURNS TABLE (
     posicao BIGINT,
+    nome_plataforma VARCHAR,
     nome_canal VARCHAR,
     receita_membros NUMERIC
 )
@@ -131,19 +165,27 @@ BEGIN
     RETURN QUERY
     SELECT
         ROW_NUMBER() OVER (ORDER BY vrmb.receita_membros_bruta DESC) AS posicao,
+		vrmb.nome_plataforma,
         vrmb.nome_canal,
         vrmb.receita_membros_bruta AS receita_membros
     FROM VW_RECEITA_MEMBROS_BRUTA vrmb
+	WHERE 1=1
+	AND (_nome_plataforma IS NULL OR vrmb.nome_plataforma = _nome_plataforma)
     ORDER BY
         receita_membros DESC
     LIMIT k;
 END;
 $$ LANGUAGE plpgsql;
 
--- CONSULTA 07: Top K Doações (Usa View Materializada + Refresh)
-CREATE OR REPLACE FUNCTION fn_top_k_doacoes(k INTEGER)
+select * from fn_top_k_membros(1);
+select * from fn_top_k_membros(1, 'YouTube');
+
+
+-- CONSULTA 07
+CREATE OR REPLACE FUNCTION fn_top_k_doacoes(k INTEGER, _nome_plataforma varchar DEFAULT NULL)
 RETURNS TABLE (
     posicao BIGINT,
+    nome_plataforma VARCHAR,
     nome_canal VARCHAR,
     total_doacao NUMERIC
 )
@@ -156,21 +198,27 @@ BEGIN
     RETURN QUERY
     SELECT
         ROW_NUMBER() OVER (ORDER BY mdtc.total_doacao_bruta DESC) AS posicao,
+        mdtc.nome_plataforma,
         mdtc.nome_canal,
         mdtc.total_doacao_bruta AS total_doacao
     FROM MV_DOACAO_TOTAL_CANAL mdtc
     WHERE
         mdtc.total_doacao_bruta > 0
+        AND (_nome_plataforma IS NULL OR mdtc.nome_plataforma = _nome_plataforma)
     ORDER BY
         total_doacao DESC
     LIMIT k;
 END;
 $$ LANGUAGE plpgsql;
 
--- CONSULTA 08: Top K Faturamento (Usa View Materializada + Refresh)
-CREATE OR REPLACE FUNCTION fn_top_k_faturamento_total(k INTEGER)
+select * from fn_top_k_doacoes(1);
+select * from fn_top_k_doacoes(1, 'YouTube');
+
+-- CONSULTA 08
+CREATE OR REPLACE FUNCTION fn_top_k_faturamento_total(k INTEGER, _nome_plataforma varchar DEFAULT NULL)
 RETURNS TABLE (
     posicao BIGINT,
+    nome_plataforma VARCHAR,
     nome_canal VARCHAR,
     faturamento_total NUMERIC
 )
@@ -183,11 +231,17 @@ BEGIN
     RETURN QUERY
     SELECT
         ROW_NUMBER() OVER (ORDER BY mftc.faturamento_total DESC) AS posicao,
+        mftc.nome_plataforma,
         mftc.nome_canal,
         mftc.faturamento_total
     FROM MV_FATURAMENTO_TOP_CANAIS mftc
+    WHERE 1=1
+        AND (_nome_plataforma IS NULL OR mftc.nome_plataforma = _nome_plataforma)
     ORDER BY
         faturamento_total DESC
     LIMIT k;
 END;
 $$ LANGUAGE plpgsql;
+
+select * from fn_top_k_faturamento_total(1);
+select * from fn_top_k_faturamento_total(1, 'YouTube');

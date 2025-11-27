@@ -1,10 +1,6 @@
 CREATE SCHEMA IF NOT EXISTS streamerdb;
 SET search_path TO streamerdb;
 
--- --------------------------------------------------------------------------------------
--- LIMPEZA TOTAL (TRUNCATE)
--- --------------------------------------------------------------------------------------
--- Limpa todas as tabelas e reinicia as sequências para garantir um estado limpo.
 TRUNCATE TABLE 
     bitcoin, paypal, cartao_credito, mecanismo_plat, doacao, 
     comentario, participa, video, inscricao, nivel_canal, 
@@ -13,11 +9,6 @@ TRUNCATE TABLE
     log_video_removido
 RESTART IDENTITY CASCADE;
 
--- ######################################################################################
--- # 1. DADOS BASE: CONVERSAO, PAIS, EMPRESA E PLATAFORMA
--- ######################################################################################
-
--- 5 Moedas
 INSERT INTO conversao (moeda, nome, fator_conversao_dolar) VALUES
 ('USD', 'Dólar Americano', 1.0000),
 ('BRL', 'Real Brasileiro', 0.2000),
@@ -26,7 +17,6 @@ INSERT INTO conversao (moeda, nome, fator_conversao_dolar) VALUES
 ('GBP', 'Libra Esterlina', 1.2500)
 ON CONFLICT (moeda) DO NOTHING;
 
--- 5 Países
 INSERT INTO pais (DDI, nome, moeda) VALUES
 ('+1', 'Estados Unidos', 'USD'),
 ('+55', 'Brasil', 'BRL'),
@@ -35,301 +25,612 @@ INSERT INTO pais (DDI, nome, moeda) VALUES
 ('+33', 'França', 'EUR')
 ON CONFLICT (DDI) DO NOTHING;
 
--- Empresas Fundadoras/Responsáveis (IDs '1' a '5' como TEXTO)
-INSERT INTO empresa (tax_id, nome, nome_fantasia) VALUES
-('1', 'Alphabet Inc.', 'Google'),
-('2', 'Amazon.com, Inc.', 'Amazon'),
-('3', 'Meta Platforms, Inc.', 'Meta'),
-('4', 'Rumble Inc.', 'Rumble'),
-('5', 'Stake.com', 'Kick')
-ON CONFLICT (tax_id) DO NOTHING;
+CREATE OR REPLACE FUNCTION fn_inserir_empresa(_nome VARCHAR, _nome_fantasia VARCHAR, _tax_id VARCHAR, _ddi_pais VARCHAR, _id_nacional VARCHAR)
+RETURNS VOID AS $$
+DECLARE
+    _id_empresa UUID := gen_random_uuid();
+BEGIN
+    INSERT INTO empresa (id_empresa, tax_id, nome, nome_fantasia)
+    VALUES (_id_empresa, _tax_id, _nome, _nome_fantasia)
+    ON CONFLICT (tax_id) DO NOTHING;
 
--- 500 Empresas Patrocinadoras Genéricas
-INSERT INTO empresa (tax_id, nome, nome_fantasia)
-SELECT
-    n::text AS tax_id,
-    'Patrocinador Genérico ' || LPAD(n::text, 3, '0') AS nome,
-    'PAG_' || LPAD(n::text, 3, '0') AS nome_fantasia
-FROM generate_series(6, 505) AS n
-ON CONFLICT (tax_id) DO NOTHING;
+    SELECT id_empresa INTO _id_empresa FROM empresa WHERE tax_id = _tax_id;
 
--- 5 Plataformas
-INSERT INTO plataforma (nro, nome, empresa_fundadora, empresa_responsavel, data_fund) VALUES
-(1, 'YouTube', '1', '1', '2005-02-14'),
-(2, 'Twitch', '2', '2', '2011-06-06'),
-(3, 'Facebook Gaming', '3', '3', '2018-06-01'),
-(4, 'Rumble', '4', '4', '2013-08-01'),
-(5, 'Kick', '5', '5', '2022-12-06')
-ON CONFLICT (nro) DO NOTHING;
+    INSERT INTO empresa_pais (id_empresa, ddi_pais, id_nacional)
+    VALUES (_id_empresa, _ddi_pais, _id_nacional)
+    ON CONFLICT (id_empresa, ddi_pais) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
 
--- Associações Empresa-País (Exemplos)
-INSERT INTO empresa_pais (empresa_tax_id, ddi_pais, id_nacional) VALUES
-('1', '+1', 'US-123456789'), 
-('1', '+55', 'BR-001'),
-('6', '+1', 'US-777'), 
-('7', '+55', 'BR-007')
-ON CONFLICT (empresa_tax_id, ddi_pais) DO NOTHING;
+CREATE OR REPLACE FUNCTION fn_popular_empresas_patrocinio() RETURNS VOID AS $$
+DECLARE
+    n INT;
+    v_tax_id TEXT;
+    v_nome TEXT;
+    v_nome_fantasia TEXT;
+BEGIN
+    FOR n IN 6..1505 LOOP
+        v_nome := 'Patrocinador Genérico ' || LPAD(n::text, 3, '0');
+        v_nome_fantasia := 'PAG_' || LPAD(n::text, 3, '0');
+        v_tax_id := n::text;
 
+        PERFORM fn_inserir_empresa(
+            v_nome,
+            v_nome_fantasia,
+            v_tax_id,
+            (SELECT ddi FROM pais ORDER BY random() LIMIT 1),
+            'GEN-' || LPAD(n::text, 6, '0')
+        );
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
 
--- ######################################################################################
--- # 2. USUÁRIOS E STREAMERS
--- ######################################################################################
+CREATE OR REPLACE FUNCTION fn_popular_plataforma(_empresa_fundadora_tax_id varchar, _empresa_responsavel_tax_id varchar, _nome_plataforma varchar, _data_fundacao date) RETURNS VOID AS $$
+DECLARE
+    _id_empresa_fundadora UUID;
+    _id_empresa_responsavel UUID;
+BEGIN
 
--- 1000 Usuários
-INSERT INTO usuario (nick, email, data_nasc, pais_residencia)
-SELECT
-    'user_' || LPAD(n::text, 4, '0') AS nick,
-    'user_' || LPAD(n::text, 4, '0') || '@email.com' AS email,
-    ('1990-01-01'::DATE + (n * 2) * INTERVAL '1 day')::DATE AS data_nasc,
-    CASE MOD(n, 5)
-        WHEN 0 THEN '+1'
-        WHEN 1 THEN '+55'
-        WHEN 2 THEN '+44'
-        WHEN 3 THEN '+81'
-        ELSE '+33'
-    END AS pais_residencia
-FROM generate_series(1, 1000) AS n
-ON CONFLICT (nick) DO NOTHING;
+    SELECT id_empresa INTO _id_empresa_fundadora FROM empresa WHERE tax_id = _empresa_fundadora_tax_id;
+    SELECT id_empresa INTO _id_empresa_responsavel FROM empresa WHERE tax_id = _empresa_responsavel_tax_id;
 
--- Plataforma_Usuario (Associa usuários a plataformas aleatoriamente)
-INSERT INTO plataforma_usuario (nro_plataforma, nick_usuario, nro_usuario)
-SELECT
-    floor(random() * 5) + 1 AS nro_plataforma,
-    'user_' || LPAD(n::text, 4, '0') AS nick_usuario,
-    'P_UID_' || LPAD(n::text, 4, '0') AS nro_usuario
-FROM generate_series(1, 1000) AS n
-ON CONFLICT (nro_plataforma, nick_usuario) DO NOTHING;
+    INSERT INTO plataforma (id_plataforma, nome, empresa_fundadora, empresa_responsavel, data_fund)
+    VALUES (gen_random_uuid(), _nome_plataforma, _id_empresa_fundadora, _id_empresa_responsavel, _data_fundacao)
+    ON CONFLICT (nome) DO NOTHING;
 
--- 500 Streamers (Os primeiros 500 usuários são streamers)
-INSERT INTO streamer_pais (nick_streamer, ddi_pais)
-SELECT
-    u.nick AS nick_streamer,
-    u.pais_residencia AS ddi_pais
-FROM usuario u
-WHERE u.nick IN (SELECT 'user_' || LPAD(n::text, 4, '0') FROM generate_series(1, 500) AS n)
-ON CONFLICT (nick_streamer, ddi_pais) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION fn_inserir_plataforma_usuario(_nick VARCHAR, _email VARCHAR, _data_nasc DATE, _pais_residencia VARCHAR, _nome_plataforma VARCHAR) RETURNS VOID AS $$
+DECLARE
+    _id_usuario UUID;
+    _id_plataforma UUID;
+BEGIN
 
--- ######################################################################################
--- # 3. CANAIS, NÍVEIS E INSCRIÇÕES
--- ######################################################################################
+    INSERT INTO usuario (id_usuario, nick, email, data_nasc, pais_residencia)
+    VALUES (gen_random_uuid(), _nick, _email, _data_nasc, _pais_residencia)
+    ON CONFLICT DO NOTHING;
+    
+    SELECT id_usuario INTO _id_usuario FROM usuario WHERE email = _email;
+    SELECT id_plataforma INTO _id_plataforma FROM plataforma WHERE nome = _nome_plataforma;
 
--- 500 Canais (Gerando UUIDs aleatórios)
--- NOTA: Coluna qtd_visualizacoes foi removida do INSERT
-INSERT INTO canal (id_canal, nome, nro_plataforma, tipo, data_criacao, nick_streamer)
-SELECT
-    gen_random_uuid() AS id_canal,
-    'Canal_' || LPAD(n::text, 3, '0') AS nome,
-    MOD(n - 1, 5) + 1 AS nro_plataforma,
-    CASE MOD(n, 3)
-        WHEN 0 THEN 'privado'
-        WHEN 1 THEN 'publico'
-        ELSE 'misto'
-    END AS tipo,
-    ('2020-01-01'::DATE + (n * 3) * INTERVAL '1 day')::DATE AS data_criacao,
-    'user_' || LPAD(n::text, 4, '0') AS nick_streamer
-FROM generate_series(1, 500) AS n
-ON CONFLICT DO NOTHING;
+    INSERT INTO plataforma_usuario (id_plataforma, id_usuario) 
+    VALUES (_id_plataforma, _id_usuario)
+    ON CONFLICT (id_plataforma, id_usuario) DO NOTHING;
+    
+END;
+$$ LANGUAGE plpgsql;
 
--- 3 Níveis para cada Canal (Cross Join)
-INSERT INTO nivel_canal (id_canal, nivel, valor)
-SELECT
-    c.id_canal, v.nivel, v.valor
-FROM canal c
-CROSS JOIN (
-    VALUES ('Bronze', 4.99), ('Prata', 9.99), ('Ouro', 24.99)
-) AS v(nivel, valor)
-ON CONFLICT (id_canal, nivel) DO NOTHING;
+CREATE OR REPLACE FUNCTION fn_popular_plataforma_usuario() RETURNS VOID AS $$
+BEGIN
+    FOR n IN 1..3000 LOOP
+        PERFORM fn_inserir_plataforma_usuario(
+            'user_' || LPAD(n::text, 4, '0'),
+            'user_' || LPAD(n::text, 4, '0') || '@email.com',
+            ('1990-01-01'::DATE + (n * 2) * INTERVAL '1 day')::DATE,
+            (SELECT ddi FROM pais ORDER BY random() LIMIT 1),
+            (SELECT nome FROM plataforma ORDER BY random() LIMIT 1)
+        );
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
 
--- 1200 Inscrições
--- Estratégia: Criar um índice temporário (row_number) para os canais (que têm UUIDs)
--- para poder distribuir as inscrições de forma determinística.
-WITH canal_index AS (
-    SELECT id_canal, row_number() OVER (ORDER BY nome) AS canal_seq
-    FROM canal
-)
-INSERT INTO inscricao (id_canal, nick_membro, nivel)
-SELECT
-    ci.id_canal,
-    'user_' || LPAD(membro::text, 4, '0') AS nick_membro,
-    nivel
-FROM (
-    -- Grupo 1: Usuários 501-1000 assinam canal "sequencial"
-    SELECT
-        n AS membro,
-        MOD(n - 501, 500) + 1 AS canal_seq_int,
-        'Prata' AS nivel
-    FROM generate_series(501, 1000) AS n
-    UNION ALL
-    -- Grupo 2: Streamers (1-500) assinam canais
-    SELECT
-        n AS membro,
-        MOD(n, 500) + 1 AS canal_seq_int,
-        'Bronze' AS nivel
-    FROM generate_series(1, 500) AS n
-    UNION ALL
-    -- Grupo 3: Aleatórios
-    SELECT
-        n AS membro,
-        MOD(n + 100, 500) + 1 AS canal_seq_int,
-        'Ouro' AS nivel
-    FROM generate_series(1, 200) AS n
-) AS t
-JOIN canal_index ci ON ci.canal_seq = t.canal_seq_int
-ON CONFLICT (id_canal, nick_membro) DO NOTHING;
+CREATE OR REPLACE FUNCTION fn_inserir_streammer(_nick VARCHAR, _ddi_pais_residencia VARCHAR, _nro_passaporte VARCHAR) RETURNS VOID AS $$
+DECLARE
+    _id_usuario UUID;
+BEGIN
+    SELECT id_usuario INTO _id_usuario FROM usuario WHERE nick = _nick;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Usuário com nick "%" não encontrado.', _nick;
+    END IF;
 
--- 200 Patrocínios
--- Mesma estratégia de índice para mapear UUIDs de canais
-WITH canal_index AS (
-    SELECT id_canal, row_number() OVER (ORDER BY nome) AS canal_seq
-    FROM canal
-), patrocinio_base AS (
-    -- Empresas 6-105 patrocinam canais 1-100
-    SELECT
-        (6 + ((n - 1) % 100))::text AS empresa_tax_id,
-        ((n - 1) % 100) + 1 AS canal_seq_int
-    FROM generate_series(1, 100) AS n
-    UNION ALL
-    -- Mesmas empresas patrocinam canais 101-200
-    SELECT
-        (6 + ((n - 1) % 100))::text AS empresa_tax_id,
-        ((n - 1) % 100) + 101 AS canal_seq_int
-    FROM generate_series(1, 100) AS n
-)
-INSERT INTO patrocinio (empresa_tax_id, id_canal, valor)
-SELECT
-    pb.empresa_tax_id,
-    ci.id_canal,
-    (10000.00 + (pb.empresa_tax_id::int * 50.00)) AS valor
-FROM patrocinio_base pb
-JOIN canal_index ci ON ci.canal_seq = pb.canal_seq_int
-ON CONFLICT (empresa_tax_id, id_canal) DO NOTHING;
+    INSERT INTO streamer_pais (id_usuario, ddi_pais) 
+    VALUES (_id_usuario, _ddi_pais_residencia)
+    ON CONFLICT (id_usuario, ddi_pais) DO NOTHING;
+    
+END;
+$$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION fn_popular_streammer_pais() RETURNS VOID AS $$
+BEGIN
+    FOR n IN 1..1000 LOOP
+        PERFORM fn_inserir_streammer(
+            (SELECT nick FROM usuario ORDER BY random() LIMIT 1),
+            (SELECT ddi FROM pais ORDER BY random() LIMIT 1),
+            'PASS-' || LPAD(n::text, 6, '0')
+        );
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
 
--- ######################################################################################
--- # 4. VÍDEOS E COMENTÁRIOS
--- ######################################################################################
+CREATE OR REPLACE FUNCTION fn_inserir_canal(_nome VARCHAR, _nome_plataforma VARCHAR, _tipo VARCHAR, _data_criacao DATE, _nick_streamer VARCHAR) RETURNS VOID AS $$
+BEGIN
+    INSERT INTO canal (id_canal, id_plataforma, id_usuario, nome, tipo, data_criacao)
+    VALUES (
+        gen_random_uuid(),
+        (SELECT id_plataforma FROM plataforma WHERE nome = _nome_plataforma),
+        (SELECT id_usuario FROM usuario WHERE nick = _nick_streamer),
+        _nome,
+        _tipo,
+        _data_criacao
+    )
+    ON CONFLICT (nome, id_plataforma) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
 
--- 5000 Vídeos
-WITH canal_index AS (
-    SELECT id_canal, row_number() OVER (ORDER BY nome) AS canal_seq
-    FROM canal
-)
-INSERT INTO video (id_video, id_canal, titulo, dataH, tema, duracao, visu_total)
-SELECT
-    gen_random_uuid() AS id_video,
-    ci.id_canal,
-    'Vídeo Teste ' || n AS titulo,
-    -- Data decrescente para garantir que o vídeo seja antigo o suficiente
-    NOW() - (n * INTERVAL '2 hours') AS dataH, 
-    CASE MOD(n, 3)
-        WHEN 0 THEN 'Review'
-        WHEN 1 THEN 'Gameplay'
-        ELSE 'Tutorial'
-    END AS tema,
-    (MOD(n, 15) + 5) * INTERVAL '1 minute' AS duracao,
-    floor(random() * 90000) AS visu_total
-FROM generate_series(1, 5000) AS n
-JOIN canal_index ci ON ci.canal_seq = ((n - 1) % 500) + 1
-ON CONFLICT (id_canal, titulo, dataH) DO NOTHING;
+CREATE OR REPLACE FUNCTION fn_popular_canais() RETURNS VOID AS $$
+BEGIN
+    FOR n IN 1..3000 LOOP
+        PERFORM fn_inserir_canal(
+            'Canal_' || LPAD(n::text, 3, '0'),
+            (SELECT nome FROM plataforma ORDER BY random() LIMIT 1),
+            CASE MOD(n, 3)
+                WHEN 0 THEN 'privado'
+                WHEN 1 THEN 'publico'
+                ELSE 'misto'
+            END,
+            ('2020-01-01'::DATE + (n * 3) * INTERVAL '1 day')::DATE,
+            (SELECT nick FROM streamer_pais
+            left join usuario on usuario.id_usuario = streamer_pais.id_usuario
+            ORDER BY random() LIMIT 1)
+        );
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
 
--- Participa (Streamer no próprio vídeo)
-INSERT INTO participa (id_video, id_canal, nick_streamer)
-SELECT v.id_video, v.id_canal, c.nick_streamer
-FROM video v
-JOIN canal c ON v.id_canal = c.id_canal
-ON CONFLICT (id_canal, id_video, nick_streamer) DO NOTHING;
+CREATE OR REPLACE FUNCTION fn_inserir_patrocinio(_nome_plataforma VARCHAR, _nome_canal VARCHAR, _nome_empresa VARCHAR, _valor NUMERIC) RETURNS VOID AS $$
+DECLARE
+    _id_plataforma UUID;
+    _id_canal UUID;
+    _id_empresa UUID;
+BEGIN
+    SELECT id_plataforma INTO _id_plataforma FROM plataforma WHERE nome = _nome_plataforma;
+    SELECT id_canal INTO _id_canal FROM canal WHERE nome = _nome_canal AND id_plataforma = _id_plataforma;
+    SELECT id_empresa INTO _id_empresa FROM empresa WHERE nome = _nome_empresa;
+    INSERT INTO patrocinio (id_plataforma, id_canal, id_empresa, valor)
+    VALUES (
+        _id_plataforma,
+        _id_canal,
+        _id_empresa,
+        _valor
+    )
+    ON CONFLICT (id_plataforma, id_canal, id_empresa) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
 
--- 1000 Comentários
--- NOTA: O trigger tg_check_comentario_cronologia exige que dataH do comentário > vídeo
-WITH video_index AS (
-    SELECT id_video, id_canal, dataH, row_number() OVER (ORDER BY dataH DESC) AS vid_seq
-    FROM video
-)
-INSERT INTO comentario (id_comentario, id_video, id_canal, nick_usuario, seq, texto, dataH)
-SELECT
-    gen_random_uuid() AS id_comentario,
-    vi.id_video,
-    vi.id_canal,
-    'user_' || LPAD(((MOD(n - 1, 1000) + 1))::text, 4, '0') AS nick_usuario,
-    (MOD(n - 1, 10) + 1) AS seq,
-    'Comentário ' || n || ' sobre o vídeo ' || vi.vid_seq AS texto,
-    -- CRÍTICO: Adicionando 30 minutos à data do vídeo para satisfazer o Trigger
-    vi.dataH + INTERVAL '30 minutes' AS dataH
-FROM generate_series(1, 1000) AS n
-JOIN video_index vi ON vi.vid_seq = ((n - 1) % 100) + 1 -- Distribui nos primeiros 100 vídeos
-ON CONFLICT (id_canal, id_video, nick_usuario, seq) DO NOTHING;
+CREATE OR REPLACE FUNCTION fn_popular_patrocinio() RETURNS VOID AS $$
+DECLARE
+    _nome_plataforma varchar;
+    _nome_canal varchar;
+    _nome_empresa varchar;
+BEGIN
+    FOR n IN 1..1000 LOOP
+        SELECT plataforma.nome, canal.nome INTO _nome_plataforma, _nome_canal
+        FROM canal 
+        left join plataforma on plataforma.id_plataforma = canal.id_plataforma 
+        ORDER BY random() LIMIT 1;
+
+        SELECT nome INTO _nome_empresa FROM empresa ORDER BY random() LIMIT 1;
+        PERFORM fn_inserir_patrocinio(
+            _nome_plataforma,
+            _nome_canal,
+            _nome_empresa,
+            (5000.00 + (n * 10.00))
+        );
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
 
 
--- ######################################################################################
--- # 5. DOAÇÕES (Transação Completa)
--- ######################################################################################
+CREATE OR REPLACE FUNCTION fn_inserir_nivel_canal(_nome_plataforma VARCHAR, _nome_canal VARCHAR, _nivel VARCHAR, _valor NUMERIC) RETURNS VOID AS $$
+DECLARE
+    _id_plataforma UUID;
+    _id_canal UUID;
+BEGIN
+    SELECT id_plataforma INTO _id_plataforma FROM plataforma WHERE nome = _nome_plataforma;
+    SELECT id_canal INTO _id_canal FROM canal WHERE nome = _nome_canal AND id_plataforma = _id_plataforma;
 
-START TRANSACTION;
+    INSERT INTO nivel_canal (id_plataforma, id_canal, nivel, valor)
+    VALUES (
+        _id_plataforma,
+        _id_canal,
+        _nivel,
+        _valor
+    )
+    ON CONFLICT (id_plataforma, id_canal, nivel) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
 
--- Seleciona os primeiros 300 comentários para receberem doações
--- Insere na tabela pai (doacao) e retorna os IDs gerados
-WITH
-comentario_targets AS (
-    SELECT id_canal, id_video, id_comentario, row_number() OVER (ORDER BY dataH DESC) AS com_seq
-    FROM comentario
-    LIMIT 300
-),
-doacao_insert AS (
-    INSERT INTO doacao (id_canal, id_video, id_comentario, id_doacao, valor, seq_pg, status)
-    SELECT
-        ct.id_canal,
-        ct.id_video,
-        ct.id_comentario,
-        gen_random_uuid() AS id_doacao,
-        (5.00 + (MOD(ct.com_seq, 10) * 0.5)) AS valor,
-        1 AS seq_pg,
-        CASE WHEN random() < 0.5 THEN 'Confirmada' ELSE 'Lida' END AS status
-    FROM comentario_targets ct
-    RETURNING id_canal, id_video, id_comentario, id_doacao
-),
--- Classifica as doações recém-inseridas de 1 a 300 para distribuir nos subtipos
-doacao_classificada AS (
-    SELECT d.*, row_number() OVER () AS rn 
-    FROM doacao_insert d
-),
--- 1. Bitcoin (1-75)
-btc AS (
-    INSERT INTO bitcoin (id_canal, id_video, id_comentario, id_doacao, TxID)
-    SELECT id_canal, id_video, id_comentario, id_doacao, 'TX_BTC_' || md5(id_doacao::text)
-    FROM doacao_classificada WHERE rn BETWEEN 1 AND 75
-),
--- 2. PayPal (76-150)
-pp AS (
-    INSERT INTO paypal (id_canal, id_video, id_comentario, id_doacao, IdPayPal)
-    SELECT id_canal, id_video, id_comentario, id_doacao, 'PAYPAL_' || md5(id_doacao::text)
-    FROM doacao_classificada WHERE rn BETWEEN 76 AND 150
-),
--- 3. Cartão de Crédito (151-225)
-cc AS (
-    INSERT INTO cartao_credito (id_canal, id_video, id_comentario, id_doacao, nro, bandeira)
-    SELECT id_canal, id_video, id_comentario, id_doacao,
-           -- Gera um número fake de 16 dígitos
-           LPAD((floor(random() * 10000000000000000))::text, 16, '4'),
-           CASE MOD(rn, 3) WHEN 0 THEN 'Visa' WHEN 1 THEN 'Mastercard' ELSE 'Elo' END
-    FROM doacao_classificada WHERE rn BETWEEN 151 AND 225
-),
--- 4. Mecanismo da Plataforma (226-300)
-plat AS (
-    INSERT INTO mecanismo_plat (id_canal, id_video, id_comentario, id_doacao, seq_plataforma)
-    SELECT id_canal, id_video, id_comentario, id_doacao, rn
-    FROM doacao_classificada WHERE rn BETWEEN 226 AND 300
-)
-SELECT count(*) as doacoes_inseridas FROM doacao_classificada;
+CREATE OR REPLACE FUNCTION fn_popular_nivel_canal() RETURNS VOID AS $$
+DECLARE
+    _nome_plataforma varchar;
+    _nome_canal varchar;
+BEGIN
+    FOR n IN 1..1000 LOOP
+        SELECT plataforma.nome, canal.nome INTO _nome_plataforma, _nome_canal 
+        FROM canal left join plataforma on plataforma.id_plataforma = canal.id_plataforma ORDER BY random() LIMIT 1;
+        PERFORM fn_inserir_nivel_canal(
+            _nome_plataforma,
+            _nome_canal,
+            CASE MOD(n, 3)
+                WHEN 0 THEN 'Bronze'
+                WHEN 1 THEN 'Prata'
+                ELSE 'Ouro'
+            END,
+            CASE MOD(n, 3)
+                WHEN 0 THEN 4.99
+                WHEN 1 THEN 9.99
+                ELSE 24.99
+            END
+        );
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
 
-COMMIT;
+CREATE OR REPLACE FUNCTION fn_inserir_inscricao(_nome_plataforma VARCHAR, _nome_canal VARCHAR, _nick_usuario VARCHAR, _nivel VARCHAR) RETURNS VOID AS $$
+DECLARE
+    _id_plataforma UUID;
+    _id_canal UUID;
+    _id_usuario UUID;
+BEGIN
+    SELECT id_plataforma INTO _id_plataforma FROM plataforma WHERE nome = _nome_plataforma;
+    SELECT id_canal INTO _id_canal FROM canal WHERE nome = _nome_canal AND id_plataforma = _id_plataforma;
+    SELECT id_usuario INTO _id_usuario FROM usuario WHERE nick = _nick_usuario;
 
--- --------------------------------------------------------------------------------------
--- VIEWS MATERIALIZADAS
--- --------------------------------------------------------------------------------------
+    INSERT INTO inscricao (id_plataforma, id_canal, id_usuario, nivel)
+    VALUES (
+        _id_plataforma,
+        _id_canal,
+        _id_usuario,
+        _nivel
+    )
+    ON CONFLICT (id_plataforma, id_canal, id_usuario, nivel) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_popular_inscricao() RETURNS VOID AS $$
+DECLARE
+    _nome_plataforma varchar;
+    _nome_canal varchar;
+    _nick_usuario varchar;
+    _nivel varchar;
+BEGIN
+    FOR n IN 1..1000 LOOP
+        SELECT plataforma.nome, canal.nome, nivel INTO _nome_plataforma, _nome_canal, _nivel
+        FROM nivel_canal 
+        left join plataforma on plataforma.id_plataforma = nivel_canal.id_plataforma 
+        left join canal on canal.id_canal = nivel_canal.id_canal
+        ORDER BY random() LIMIT 1;
+
+        SELECT nick INTO _nick_usuario FROM usuario ORDER BY random() LIMIT 1;
+        PERFORM fn_inserir_inscricao(
+            _nome_plataforma,
+            _nome_canal,
+            _nick_usuario,
+            _nivel
+        );
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_inserir_video(_nome_plataforma VARCHAR, _nome_canal VARCHAR, _titulo VARCHAR, _datah timestamp, _tema VARCHAR, _duracao INTERVAL) RETURNS VOID AS $$
+DECLARE
+    _id_plataforma UUID;
+    _id_canal UUID;
+BEGIN
+    SELECT id_plataforma INTO _id_plataforma FROM plataforma WHERE nome = _nome_plataforma;
+    SELECT id_canal INTO _id_canal FROM canal WHERE nome = _nome_canal AND id_plataforma = _id_plataforma;
+
+    INSERT INTO video (id_plataforma, id_canal, id_video, titulo, datah, tema, duracao)
+    VALUES (
+        _id_plataforma,
+        _id_canal,
+        gen_random_uuid(),
+        _titulo, 
+        _datah, 
+        _tema, 
+        _duracao
+    )
+    ON CONFLICT (id_plataforma, id_canal, titulo, datah) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_popular_video() RETURNS VOID AS $$
+DECLARE
+    _nome_plataforma varchar;
+    _nome_canal varchar;
+BEGIN
+    FOR n IN 1..5000 LOOP
+        SELECT p.nome, c.nome 
+        INTO _nome_plataforma, _nome_canal
+        FROM canal c
+        INNER JOIN plataforma p ON p.id_plataforma = c.id_plataforma 
+        ORDER BY random() 
+        LIMIT 1;
+
+        PERFORM fn_inserir_video(
+            _nome_plataforma,
+            _nome_canal,
+            'Vídeo Teste ' || n,
+            NOW()::timestamp,
+            CASE MOD(n, 3)
+                WHEN 0 THEN 'Review'
+                WHEN 1 THEN 'Gameplay'
+                ELSE 'Tutorial'
+            END,
+            (MOD(n, 15) + 5) * INTERVAL '1 minute'
+        );
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION fn_inserir_participacao(_nome_plataforma VARCHAR, _nome_canal VARCHAR, _titulo VARCHAR, _datah timestamp, _nick_streamer VARCHAR) RETURNS VOID AS $$
+DECLARE
+    _id_plataforma UUID;
+    _id_canal UUID;
+    _id_video UUID;
+    _id_streamer UUID;
+BEGIN
+    SELECT id_plataforma INTO _id_plataforma FROM plataforma WHERE nome = _nome_plataforma;
+    SELECT id_canal INTO _id_canal FROM canal WHERE nome = _nome_canal AND id_plataforma = _id_plataforma;
+    SELECT id_usuario INTO _id_streamer FROM usuario WHERE nick = _nick_streamer;
+    SELECT id_video INTO _id_video FROM video WHERE id_plataforma = _id_plataforma AND id_canal = _id_canal AND titulo = _titulo AND datah = _datah;
+
+    INSERT INTO participa (id_plataforma, id_canal, id_video, id_usuario)
+    VALUES (
+        _id_plataforma,
+        _id_canal,
+        _id_video,
+        _id_streamer
+    )
+    ON CONFLICT (id_plataforma, id_canal, id_video, id_usuario) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_popular_participacao() RETURNS VOID AS $$
+DECLARE
+    _nome_plataforma varchar;
+    _nome_canal varchar;
+    _titulo varchar;
+    _datah timestamp;
+    _nick_streamer varchar;
+BEGIN
+    FOR n IN 1..1000 LOOP
+        SELECT p.nome, c.nome, v.titulo, v.datah
+        INTO _nome_plataforma, _nome_canal, _titulo, _datah
+        FROM video v
+        INNER JOIN plataforma p ON p.id_plataforma = v.id_plataforma 
+        INNER JOIN canal c ON c.id_canal = v.id_canal
+        ORDER BY random() 
+        LIMIT 1;
+
+        SELECT u.nick INTO _nick_streamer
+        FROM streamer_pais sp
+        INNER JOIN usuario u ON u.id_usuario = sp.id_usuario
+        ORDER BY random() 
+        LIMIT 1;
+
+        PERFORM fn_inserir_participacao(
+            _nome_plataforma,
+            _nome_canal,
+            _titulo,
+            _datah,
+            _nick_streamer
+        );
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+
+
+CREATE OR REPLACE FUNCTION fn_inserir_comentario(_nome_plataforma VARCHAR, _nome_canal VARCHAR, _titulo VARCHAR, _texto text, _datah timestamp, _nick_usuario VARCHAR) RETURNS VOID AS $$
+DECLARE
+    _id_plataforma UUID;
+    _id_canal UUID;
+    _id_video UUID;
+    _id_usuario UUID;
+BEGIN
+    SELECT id_plataforma INTO _id_plataforma FROM plataforma WHERE nome = _nome_plataforma;
+    SELECT id_canal INTO _id_canal FROM canal WHERE nome = _nome_canal AND id_plataforma = _id_plataforma;
+    SELECT id_usuario INTO _id_usuario FROM usuario WHERE nick = _nick_usuario;
+    SELECT id_video INTO _id_video FROM video WHERE id_plataforma = _id_plataforma AND id_canal = _id_canal AND titulo = _titulo AND datah = _datah;
+
+    INSERT INTO comentario (id_plataforma, id_canal, id_video, id_comentario, id_usuario, texto, datah)
+    VALUES (
+        _id_plataforma,
+        _id_canal,
+        _id_video,
+        gen_random_uuid(),
+        _id_usuario,
+        _texto,
+        NOW()::timestamp
+    )
+    ON CONFLICT (id_plataforma, id_canal, id_video, id_comentario, id_usuario) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_popular_comentario() RETURNS VOID AS $$
+DECLARE
+    _nome_plataforma varchar;
+    _nome_canal varchar;
+    _titulo varchar;
+    _datah timestamp;
+    _nick varchar;
+BEGIN
+    FOR n IN 1..7500 LOOP
+        SELECT p.nome, c.nome, v.titulo, v.datah
+        INTO _nome_plataforma, _nome_canal, _titulo, _datah
+        FROM video v
+        INNER JOIN plataforma p ON p.id_plataforma = v.id_plataforma 
+        INNER JOIN canal c ON c.id_canal = v.id_canal
+        ORDER BY random() 
+        LIMIT 1;
+
+        SELECT nick INTO _nick
+        FROM usuario
+        ORDER BY random() 
+        LIMIT 1;
+
+        PERFORM fn_inserir_comentario(
+            _nome_plataforma,
+            _nome_canal,
+            _titulo,
+            'Comentário teste ' || n,
+            _datah,
+            _nick
+        );
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION fn_inserir_doacao(
+    _nome_plataforma VARCHAR,
+    _nome_canal VARCHAR,
+    _titulo VARCHAR,
+    _datah TIMESTAMP,
+    _nick_usuario VARCHAR,
+    _valor NUMERIC,
+    _seq_pg INTEGER,
+    _status VARCHAR,
+    _tipo_pagamento VARCHAR,
+    _txid TEXT DEFAULT NULL,
+    _idpaypal TEXT DEFAULT NULL,
+    _nro_cartao TEXT DEFAULT NULL,
+    _bandeira TEXT DEFAULT NULL,
+    _seq_plataforma INTEGER DEFAULT NULL
+) RETURNS VOID AS $$
+DECLARE
+    _id_plataforma UUID;
+    _id_canal UUID;
+    _id_video UUID;
+    _id_usuario UUID;
+    _id_comentario UUID;
+    _id_doacao UUID := gen_random_uuid();
+BEGIN
+    SELECT id_plataforma INTO _id_plataforma FROM plataforma WHERE nome = _nome_plataforma;
+    SELECT id_canal INTO _id_canal FROM canal WHERE nome = _nome_canal AND id_plataforma = _id_plataforma;
+    SELECT id_video INTO _id_video FROM video WHERE id_plataforma = _id_plataforma AND id_canal = _id_canal AND titulo = _titulo AND datah = _datah;
+    SELECT id_usuario INTO _id_usuario FROM usuario WHERE nick = _nick_usuario;
+    SELECT id_comentario INTO _id_comentario FROM comentario 
+        WHERE id_plataforma = _id_plataforma AND id_canal = _id_canal AND id_video = _id_video AND id_usuario = _id_usuario
+        ORDER BY datah DESC LIMIT 1;
+
+    INSERT INTO doacao (id_plataforma, id_canal, id_video, id_comentario, id_usuario, id_doacao, valor, seq_pg, status)
+    VALUES (_id_plataforma, _id_canal, _id_video, _id_comentario, _id_usuario, _id_doacao, _valor, _seq_pg, _status)
+    ON CONFLICT DO NOTHING;
+
+    -- Inserir no método de pagamento correspondente
+    IF lower(_tipo_pagamento) = 'bitcoin' THEN
+        INSERT INTO bitcoin (id_plataforma, id_canal, id_video, id_comentario, id_usuario, id_doacao, txid)
+        VALUES (_id_plataforma, _id_canal, _id_video, _id_comentario, _id_usuario, _id_doacao, COALESCE(_txid, 'TX_BTC_' || md5(_id_doacao::text)))
+        ON CONFLICT DO NOTHING;
+    ELSIF lower(_tipo_pagamento) = 'paypal' THEN
+        INSERT INTO paypal (id_plataforma, id_canal, id_video, id_comentario, id_usuario, id_doacao, idpaypal)
+        VALUES (_id_plataforma, _id_canal, _id_video, _id_comentario, _id_usuario, _id_doacao, COALESCE(_idpaypal, 'PAYPAL_' || md5(_id_doacao::text)))
+        ON CONFLICT DO NOTHING;
+    ELSIF lower(_tipo_pagamento) = 'cartao' THEN
+        INSERT INTO cartao_credito (id_plataforma, id_canal, id_video, id_comentario, id_usuario, id_doacao, nro, bandeira)
+        VALUES (
+            _id_plataforma, _id_canal, _id_video, _id_comentario, _id_usuario, _id_doacao,
+            COALESCE(_nro_cartao, LPAD((floor(random() * 10000000000000000))::text, 16, '4')),
+            COALESCE(_bandeira, (CASE MOD(EXTRACT(epoch FROM now())::int, 3) WHEN 0 THEN 'Visa' WHEN 1 THEN 'Mastercard' ELSE 'Elo' END))
+        )
+        ON CONFLICT DO NOTHING;
+    ELSIF lower(_tipo_pagamento) = 'mecanismo' THEN
+        INSERT INTO mecanismo_plat (id_plataforma, id_canal, id_video, id_comentario, id_usuario, id_doacao, seq_plataforma)
+        VALUES (_id_plataforma, _id_canal, _id_video, _id_comentario, _id_usuario, _id_doacao, COALESCE(_seq_plataforma, 1))
+        ON CONFLICT DO NOTHING;
+    ELSE
+        RAISE NOTICE 'Tipo de pagamento "%" inválido. Use: bitcoin, paypal, cartao, mecanismo.', _tipo_pagamento;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_popular_doacao() RETURNS VOID AS $$
+DECLARE
+    _nome_plataforma VARCHAR;
+    _nome_canal VARCHAR;
+    _titulo VARCHAR;
+    _datah TIMESTAMP;
+    _nick_usuario VARCHAR;
+    _tipo VARCHAR;
+BEGIN
+    FOR n IN 1..900 LOOP
+        SELECT p.nome, c.nome, v.titulo, v.datah, u.nick
+        INTO _nome_plataforma, _nome_canal, _titulo, _datah, _nick_usuario
+        FROM comentario cm
+        INNER JOIN video v ON v.id_plataforma = cm.id_plataforma AND v.id_canal = cm.id_canal AND v.id_video = cm.id_video
+        INNER JOIN plataforma p ON p.id_plataforma = v.id_plataforma
+        INNER JOIN canal c ON c.id_canal = v.id_canal
+        INNER JOIN usuario u ON u.id_usuario = cm.id_usuario
+        ORDER BY random()
+        LIMIT 1;
+
+        _tipo := CASE MOD(n, 7)
+            WHEN 0 THEN 'bitcoin'
+            WHEN 1 THEN 'paypal'
+            WHEN 2 THEN 'cartao'
+            ELSE 'mecanismo'
+        END;
+
+        PERFORM fn_inserir_doacao(
+            _nome_plataforma,
+            _nome_canal,
+            _titulo,
+            _datah,
+            _nick_usuario,
+            (5.00 + (MOD(n, 10) * 0.5)),
+            1,
+            CASE WHEN random() < 0.5 THEN 'Confirmada' ELSE 'Lida' END,
+            _tipo
+        );
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+
+
+CREATE OR REPLACE FUNCTION fn_popular_database() RETURNS VOID AS $$
+BEGIN
+    PERFORM fn_inserir_empresa('Alphabet Inc.', 'Google', '1', '+1', 'US-123456789');
+    PERFORM fn_inserir_empresa('Amazon.com, Inc.', 'Amazon', '2', '+1', 'US-987654321');
+    PERFORM fn_inserir_empresa('Meta Platforms, Inc.', 'Meta', '3', '+1', 'US-555555555');
+    PERFORM fn_inserir_empresa('Rumble Inc.', 'Rumble', '4', '+1', 'US-222333444');
+    PERFORM fn_inserir_empresa('Stake.com', 'Kick', '5', '+1', 'US-999888777');
+
+    PERFORM fn_popular_empresas_patrocinio();
+
+    PERFORM fn_popular_plataforma( '1', '1','YouTube', '2005-02-14');
+    PERFORM fn_popular_plataforma( '2', '2','Twitch', '2011-06-06');
+    PERFORM fn_popular_plataforma( '3', '3','Facebook Gaming', '2018-06-01');
+    PERFORM fn_popular_plataforma( '4', '4','Rumble', '2013-08-01');
+    PERFORM fn_popular_plataforma( '5', '5','Kick', '2022-12-06');
+
+    PERFORM fn_popular_plataforma_usuario();
+
+    PERFORM fn_popular_streammer_pais();
+    PERFORM fn_popular_canais();
+
+    PERFORM fn_popular_patrocinio();
+
+    PERFORM fn_popular_nivel_canal();
+
+    PERFORM fn_popular_inscricao();
+
+    PERFORM fn_popular_video();
+    PERFORM fn_popular_participacao();
+
+    PERFORM fn_popular_comentario();
+
+    PERFORM fn_popular_doacao();
+END;
+$$ LANGUAGE plpgsql;
+
+select fn_popular_database();
+
 
 REFRESH MATERIALIZED VIEW MV_DOACAO_TOTAL_CANAL;
 REFRESH MATERIALIZED VIEW MV_FATURAMENTO_TOP_CANAIS;
 REFRESH MATERIALIZED VIEW MV_CANAL_VISUALIZACOES;
-
--- FIM DO SCRIPT

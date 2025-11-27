@@ -4,9 +4,9 @@ CREATE OR REPLACE FUNCTION fn_update_user_count() RETURNS TRIGGER AS $$
   BEGIN
     SET search_path TO streamerdb;
     IF TG_OP = 'INSERT' THEN
-      UPDATE plataforma SET qtd_users = qtd_users + 1 WHERE nro = NEW.nro_plataforma;
+      UPDATE plataforma SET qtd_users = qtd_users + 1 WHERE id_plataforma = NEW.id_plataforma;
     ELSIF TG_OP = 'DELETE' THEN
-      UPDATE plataforma SET qtd_users = qtd_users - 1 WHERE nro = OLD.nro_plataforma;
+      UPDATE plataforma SET qtd_users = qtd_users - 1 WHERE id_plataforma = OLD.id_plataforma;
     END IF;
     RETURN NULL;
   END;
@@ -23,12 +23,12 @@ DECLARE
 BEGIN
     SET search_path TO streamerdb;
     
-    SELECT dataH INTO v_data_criacao 
+    SELECT datah INTO v_data_criacao 
     FROM video 
     WHERE id_video = NEW.id_video AND id_canal = NEW.id_canal;
 
-    IF NEW.dataH < v_data_criacao THEN
-        RAISE EXCEPTION 'Inconsistência Temporal: Comentário (Data: %) não pode ser anterior ao Vídeo (Data: %).', NEW.dataH, v_data_criacao;
+    IF NEW.datah < v_data_criacao THEN
+        RAISE EXCEPTION 'Inconsistência Temporal: Comentário (Data: %) não pode ser anterior ao Vídeo (Data: %).', NEW.datah, v_data_criacao;
     END IF;
     
     RETURN NEW;
@@ -65,10 +65,10 @@ BEGIN
     
     SELECT COUNT(1) INTO user_count 
     FROM usuario 
-    WHERE nick = NEW.nick_streamer;
+    WHERE id_usuario = NEW.id_usuario;
 
     IF user_count = 0 THEN
-        RAISE EXCEPTION 'Nick de streamer "%" não encontrado na tabela de usuários.', NEW.nick_streamer;
+        RAISE EXCEPTION 'ID de usuário "%" não encontrado na tabela de usuários.', NEW.id_usuario;
     END IF;
     
     RETURN NEW;

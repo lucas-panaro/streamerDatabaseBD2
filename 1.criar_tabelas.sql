@@ -1,224 +1,425 @@
-CREATE SCHEMA IF NOT EXISTS streamerdb;
-SET search_path TO streamerdb;
+create schema if not exists streamerdb;
 
--- Drops de segurança
-DROP TABLE IF EXISTS empresa CASCADE;
-DROP TABLE IF EXISTS plataforma CASCADE;
-DROP TABLE IF EXISTS conversao CASCADE;
-DROP TABLE IF EXISTS pais CASCADE;
-DROP TABLE IF EXISTS usuario CASCADE;
-DROP TABLE IF EXISTS plataforma_usuario CASCADE;
-DROP TABLE IF EXISTS streamer_pais CASCADE;
-DROP TABLE IF EXISTS empresa_pais CASCADE;
-DROP TABLE IF EXISTS canal CASCADE;
-DROP TABLE IF EXISTS patrocinio CASCADE;
-DROP TABLE IF EXISTS nivel_canal CASCADE;
-DROP TABLE IF EXISTS inscricao CASCADE;
-DROP TABLE IF EXISTS video CASCADE;
-DROP TABLE IF EXISTS participa CASCADE;
-DROP TABLE IF EXISTS comentario CASCADE;
-DROP TABLE IF EXISTS doacao CASCADE;
-DROP TABLE IF EXISTS bitcoin CASCADE;
-DROP TABLE IF EXISTS paypal CASCADE;
-DROP TABLE IF EXISTS cartao_credito CASCADE;
-DROP TABLE IF EXISTS mecanismo_plat CASCADE;
+set
+    search_path to streamerdb;
 
--- Tabelas
-CREATE TABLE empresa (
-    tax_id        VARCHAR(50) PRIMARY KEY,
-    nome          VARCHAR(100) NOT NULL,
-    nome_fantasia VARCHAR(100)
-);
+drop table if exists empresa cascade;
 
-CREATE TABLE plataforma (
-    nro             SERIAL PRIMARY KEY,
-    nome            VARCHAR(100) UNIQUE NOT NULL,
-    qtd_users       INTEGER DEFAULT 0,
-    empresa_fundadora    VARCHAR(50) NOT NULL,
-    empresa_responsavel   VARCHAR(50) NOT NULL,
-    data_fund       DATE NOT NULL,
-    FOREIGN KEY (empresa_fundadora) REFERENCES empresa(tax_id),
-    FOREIGN KEY (empresa_responsavel) REFERENCES empresa(tax_id)
-);
+drop table if exists plataforma cascade;
 
-CREATE TABLE conversao (
-    moeda                   VARCHAR(10) PRIMARY KEY,
-    nome                    VARCHAR(50) NOT NULL,
-    fator_conversao_dolar   NUMERIC(10, 4) NOT NULL
-);
+drop table if exists conversao cascade;
 
-CREATE TABLE pais (
-    DDI           VARCHAR(5) PRIMARY KEY,
-    nome          VARCHAR(100) NOT NULL,
-    moeda         VARCHAR(10) NOT NULL,
-    FOREIGN KEY (moeda) REFERENCES conversao(moeda)
-);
+drop table if exists pais cascade;
 
-CREATE TABLE usuario (
-    nick            VARCHAR(50) PRIMARY KEY,
-    email           VARCHAR(100) UNIQUE NOT NULL,
-    data_nasc       DATE,
-    telefone        VARCHAR(20),
-    end_postal      VARCHAR(200),
-    pais_residencia VARCHAR(5) NOT NULL,
-    FOREIGN KEY (pais_residencia) REFERENCES pais(DDI)
-);
+drop table if exists usuario cascade;
 
-CREATE TABLE plataforma_usuario (
-    nro_plataforma  INTEGER NOT NULL,
-    nick_usuario    VARCHAR(50) NOT NULL,
-    nro_usuario     VARCHAR(50),
-    PRIMARY KEY (nro_plataforma, nick_usuario),
-    FOREIGN KEY (nro_plataforma) REFERENCES plataforma(nro),
-    FOREIGN KEY (nick_usuario) REFERENCES usuario(nick)
-);
+drop table if exists plataforma_usuario cascade;
 
-CREATE TABLE streamer_pais (
-    nick_streamer   VARCHAR(50) NOT NULL,
-    ddi_pais        VARCHAR(5) NOT NULL,
-    nro_passaporte  VARCHAR(50),
-    PRIMARY KEY (nick_streamer, ddi_pais),
-    FOREIGN KEY (nick_streamer) REFERENCES usuario(nick),
-    FOREIGN KEY (ddi_pais) REFERENCES pais(DDI)
-);
+drop table if exists streamer_pais cascade;
 
-CREATE TABLE empresa_pais (
-    empresa_tax_id VARCHAR(50) NOT NULL,
-    ddi_pais    VARCHAR(5) NOT NULL,
-    id_nacional VARCHAR(50),
-    PRIMARY KEY (empresa_tax_id, ddi_pais),
-    FOREIGN KEY (empresa_tax_id) REFERENCES empresa(tax_id),
-    FOREIGN KEY (ddi_pais) REFERENCES pais(DDI)
-);
+drop table if exists empresa_pais cascade;
 
-CREATE TABLE canal (
-    id_canal            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    nome                VARCHAR(100) NOT NULL,
-    nro_plataforma      INTEGER NOT NULL,
-    tipo                VARCHAR(50),
-    data_criacao        DATE NOT NULL,
-    desc_canal          TEXT,
-    nick_streamer       VARCHAR(50) NOT NULL,
-    UNIQUE (nome, nro_plataforma),
-    FOREIGN KEY (nro_plataforma) REFERENCES plataforma(nro),
-    FOREIGN KEY (nick_streamer) REFERENCES usuario(nick)
-);
+drop table if exists canal cascade;
 
-CREATE TABLE patrocinio (
-    empresa_tax_id     VARCHAR(50) NOT NULL,
-    id_canal        UUID NOT NULL,
-    valor           NUMERIC(12, 2) NOT NULL,
-    PRIMARY KEY (empresa_tax_id, id_canal),
-    FOREIGN KEY (empresa_tax_id) REFERENCES empresa(tax_id),
-    FOREIGN KEY (id_canal) REFERENCES canal(id_canal)
-);
+drop table if exists patrocinio cascade;
 
-CREATE TABLE nivel_canal (
-    id_canal        UUID NOT NULL,
-    nivel           VARCHAR(50) NOT NULL,
-    valor           NUMERIC(10, 2) NOT NULL,
-    gif             VARCHAR(200),
-    PRIMARY KEY (id_canal, nivel),
-    FOREIGN KEY (id_canal) REFERENCES canal(id_canal)
-);
+drop table if exists nivel_canal cascade;
 
-CREATE TABLE inscricao (
-    id_canal        UUID NOT NULL,
-    nick_membro     VARCHAR(50) NOT NULL,
-    nivel           VARCHAR(50) NOT NULL,
-    PRIMARY KEY (id_canal, nick_membro),
-    FOREIGN KEY (nick_membro) REFERENCES usuario(nick),
-    FOREIGN KEY (id_canal, nivel) REFERENCES nivel_canal(id_canal, nivel)
-);
+drop table if exists inscricao cascade;
 
-CREATE TABLE video (
-    id_canal        UUID NOT NULL,
-    id_video        UUID NOT NULL,
-    titulo          VARCHAR(200) NOT NULL,
-    dataH           TIMESTAMP NOT NULL,
-    tema            VARCHAR(100),
-    duracao         INTERVAL,
-    visu_simul      INTEGER DEFAULT 0,
-    visu_total      BIGINT DEFAULT 0,
-    PRIMARY KEY (id_canal, id_video),
-    UNIQUE (id_canal, titulo, dataH),
-    FOREIGN KEY (id_canal) REFERENCES canal(id_canal)
-);
+drop table if exists video cascade;
 
-CREATE TABLE participa (
-    id_canal        UUID NOT NULL,
-    id_video        UUID NOT NULL,
-    nick_streamer   VARCHAR(50) NOT NULL,
-    PRIMARY KEY (id_canal, id_video, nick_streamer),
-    FOREIGN KEY (id_canal, id_video) REFERENCES video(id_canal, id_video),
-    FOREIGN KEY (nick_streamer) REFERENCES usuario(nick)
-);
+drop table if exists participa cascade;
 
-CREATE TABLE comentario (
-    id_canal                  UUID NOT NULL,
-    id_video                  UUID NOT NULL,
-    id_comentario             UUID NOT NULL,
-    nick_usuario              VARCHAR(50) NOT NULL,
-    seq                       INTEGER NOT NULL,
-    texto                     TEXT,
-    dataH                     TIMESTAMP NOT NULL,
-    comentario_original_id_canal       UUID,
-    comentario_original_id_video       UUID,
-    comentario_original_id             UUID,
-    PRIMARY KEY (id_canal, id_video, id_comentario),
-    UNIQUE (id_canal, id_video, nick_usuario, seq),
-    FOREIGN KEY (id_canal, id_video) REFERENCES video(id_canal, id_video),
-    FOREIGN KEY (nick_usuario) REFERENCES usuario(nick),
-    FOREIGN KEY (comentario_original_id_canal, comentario_original_id_video, comentario_original_id) REFERENCES comentario(id_canal, id_video, id_comentario)
-);
+drop table if exists comentario cascade;
 
-CREATE TABLE doacao (
-    id_canal        UUID NOT NULL,
-    id_video        UUID NOT NULL,
-    id_comentario   UUID NOT NULL,
-    id_doacao       UUID NOT NULL,
-    valor           NUMERIC(10, 2) NOT NULL,
-    seq_pg          INTEGER NOT NULL,
-    status          VARCHAR(20),
-    PRIMARY KEY (id_canal, id_video, id_comentario, id_doacao),
-    UNIQUE (id_comentario, seq_pg),
-    FOREIGN KEY (id_canal,id_video, id_comentario) REFERENCES comentario(id_canal, id_video, id_comentario)
-);
+drop table if exists doacao cascade;
 
-CREATE TABLE bitcoin (
-    id_canal        UUID NOT NULL,
-    id_video        UUID NOT NULL,
-    id_comentario   UUID NOT NULL,
-    id_doacao       UUID NOT NULL,
-    TxID        VARCHAR(100) UNIQUE NOT NULL,
-    PRIMARY KEY (id_canal, id_video, id_comentario, id_doacao),
-    FOREIGN KEY (id_canal,id_video, id_comentario,id_doacao) REFERENCES doacao(id_canal,id_video, id_comentario,id_doacao)
-);
+drop table if exists bitcoin cascade;
 
-CREATE TABLE paypal (
-    id_canal        UUID NOT NULL,
-    id_video        UUID NOT NULL,
-    id_comentario   UUID NOT NULL,
-    id_doacao       UUID NOT NULL,
-    IdPayPal    VARCHAR(100) UNIQUE NOT NULL,
-    FOREIGN KEY (id_canal,id_video, id_comentario,id_doacao) REFERENCES doacao(id_canal,id_video, id_comentario,id_doacao)
-);
+drop table if exists paypal cascade;
 
-CREATE TABLE cartao_credito (
-    id_canal        UUID NOT NULL,
-    id_video        UUID NOT NULL,
-    id_comentario   UUID NOT NULL,
-    id_doacao       UUID NOT NULL,
-    nro         VARCHAR(20) NOT NULL,
-    bandeira    VARCHAR(50) NOT NULL,
-    FOREIGN KEY (id_canal,id_video, id_comentario,id_doacao) REFERENCES doacao(id_canal,id_video, id_comentario,id_doacao)
-);
+drop table if exists cartao_credito cascade;
 
-CREATE TABLE mecanismo_plat (
-    id_canal        UUID NOT NULL,
-    id_video        UUID NOT NULL,
-    id_comentario   UUID NOT NULL,
-    id_doacao       UUID NOT NULL,
-    seq_plataforma  INTEGER UNIQUE,
-    FOREIGN KEY (id_canal,id_video, id_comentario,id_doacao) REFERENCES doacao(id_canal,id_video, id_comentario,id_doacao)
-);
+drop table if exists mecanismo_plat cascade;
+
+create table
+    empresa (
+        id_empresa uuid primary key,
+        tax_id varchar(50) unique,
+        nome varchar(100) not null,
+        nome_fantasia varchar(100)
+    );
+
+create table
+    plataforma (
+        id_plataforma uuid primary key,
+        nome varchar(100) unique not null,
+        qtd_users integer default 0,
+        empresa_fundadora uuid not null,
+        empresa_responsavel uuid not null,
+        data_fund date not null,
+        foreign key (empresa_fundadora) references empresa (id_empresa),
+        foreign key (empresa_responsavel) references empresa (id_empresa)
+    );
+
+create table
+    conversao (
+        moeda varchar(10) primary key,
+        nome varchar(50) not null,
+        fator_conversao_dolar numeric(10, 4) not null
+    );
+
+create table
+    pais (
+        ddi varchar(5) primary key,
+        nome varchar(100) not null,
+        moeda varchar(10) not null,
+        foreign key (moeda) references conversao (moeda)
+    );
+
+create table
+    usuario (
+        id_usuario uuid primary key,
+        nick varchar(50) unique not null,
+        email varchar(100) unique not null,
+        data_nasc date,
+        telefone varchar(20),
+        end_postal varchar(200),
+        pais_residencia varchar(5) not null,
+        foreign key (pais_residencia) references pais (ddi)
+    );
+
+create table
+    plataforma_usuario (
+        id_plataforma uuid not null,
+        id_usuario uuid not null,
+        primary key (id_plataforma, id_usuario),
+        foreign key (id_plataforma) references plataforma (id_plataforma),
+        foreign key (id_usuario) references usuario (id_usuario)
+    );
+
+create table
+    streamer_pais (
+        id_usuario uuid not null,
+        ddi_pais varchar(5) not null,
+        nro_passaporte varchar(50),
+        primary key (id_usuario, ddi_pais),
+        foreign key (id_usuario) references usuario (id_usuario),
+        foreign key (ddi_pais) references pais (ddi)
+    );
+
+create table
+    empresa_pais (
+        id_empresa uuid not null,
+        ddi_pais varchar(5) not null,
+        id_nacional varchar(50),
+        primary key (id_empresa, ddi_pais),
+        foreign key (id_empresa) references empresa (id_empresa),
+        foreign key (ddi_pais) references pais (ddi)
+    );
+
+create table
+    canal (
+        id_plataforma uuid not null,
+        id_canal uuid not null,
+        id_usuario uuid not null,
+        nome varchar(100) not null,
+        tipo varchar(50),
+        data_criacao date not null,
+        desc_canal text,
+        qtd_visualizacoes bigint default 0,
+        primary key (id_plataforma, id_canal),
+        unique (id_plataforma, nome),
+        foreign key (id_plataforma) references plataforma (id_plataforma),
+        foreign key (id_usuario) references usuario (id_usuario)
+    );
+
+create table
+    patrocinio (
+        id_empresa uuid not null,
+        id_plataforma uuid not null,
+        id_canal uuid not null,
+        valor numeric(12, 2) not null,
+        primary key (id_empresa, id_plataforma, id_canal),
+        unique (id_empresa, id_plataforma, id_canal),
+        foreign key (id_empresa) references empresa (id_empresa),
+        foreign key (id_plataforma, id_canal) references canal (id_plataforma, id_canal),
+        foreign key (id_plataforma) references plataforma (id_plataforma)
+    );
+
+create table
+    nivel_canal (
+        id_plataforma uuid not null,
+        id_canal uuid not null,
+        nivel varchar(50) not null,
+        valor numeric(10, 2) not null,
+        gif varchar(200),
+        primary key (id_plataforma, id_canal, nivel),
+        unique (id_plataforma, id_canal, nivel),
+        foreign key (id_plataforma, id_canal) references canal (id_plataforma, id_canal)
+    );
+
+create table
+    inscricao (
+        id_plataforma uuid not null,
+        id_canal uuid not null,
+        id_usuario uuid not null,
+        nivel varchar(50) not null,
+        primary key (id_plataforma, id_canal, id_usuario),
+        unique (id_plataforma, id_canal, id_usuario, nivel),
+        foreign key (id_usuario) references usuario (id_usuario),
+        foreign key (id_plataforma, id_canal, nivel) references nivel_canal (id_plataforma, id_canal, nivel)
+    );
+
+create table
+    video (
+        id_plataforma uuid not null,
+        id_canal uuid not null,
+        id_video uuid not null,
+        titulo varchar(200) not null,
+        datah timestamp not null,
+        tema varchar(100),
+        duracao interval,
+        visu_simul integer default 0,
+        visu_total bigint default 0,
+        primary key (id_plataforma, id_canal, id_video),
+        unique (id_plataforma, id_canal, titulo, datah),
+        foreign key (id_plataforma, id_canal) references canal (id_plataforma, id_canal)
+    );
+
+create table
+    participa (
+        id_plataforma uuid not null,
+        id_canal uuid not null,
+        id_video uuid not null,
+        id_usuario uuid not null,
+        primary key (id_plataforma, id_canal, id_video, id_usuario),
+        unique (id_plataforma, id_canal, id_video, id_usuario),
+        foreign key (id_plataforma, id_canal, id_video) references video (id_plataforma, id_canal, id_video),
+        foreign key (id_usuario) references usuario (id_usuario)
+    );
+
+create table
+    comentario (
+        id_plataforma uuid not null,
+        id_canal uuid not null,
+        id_video uuid not null,
+        id_comentario uuid not null,
+        id_usuario uuid not null,
+        texto text,
+        datah timestamp not null,
+        comentario_original_id_plataforma uuid,
+        comentario_original_id_canal uuid,
+        comentario_original_id_video uuid,
+        comentario_original_id uuid,
+        comentario_original_id_usuario uuid,
+        primary key (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario
+        ),
+        unique (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario
+        ),
+        foreign key (id_plataforma, id_canal, id_video) references video (id_plataforma, id_canal, id_video),
+        foreign key (id_usuario) references usuario (id_usuario),
+        foreign key (
+            comentario_original_id_plataforma,
+            comentario_original_id_canal,
+            comentario_original_id_video,
+            comentario_original_id,
+            comentario_original_id_usuario
+        ) references comentario (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario
+        )
+    );
+
+create table
+    doacao (
+        id_plataforma uuid not null,
+        id_canal uuid not null,
+        id_video uuid not null,
+        id_comentario uuid not null,
+        id_usuario uuid not null,
+        id_doacao uuid not null,
+        valor numeric(10, 2) not null,
+        seq_pg integer not null,
+        status varchar(20),
+        primary key (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario,
+            id_doacao
+        ),
+        unique (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario,
+            id_doacao
+        ),
+        foreign key (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario
+        ) references comentario (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario
+        )
+    );
+
+create table
+    bitcoin (
+        id_plataforma uuid not null,
+        id_canal uuid not null,
+        id_video uuid not null,
+        id_comentario uuid not null,
+        id_usuario uuid not null,
+        id_doacao uuid not null,
+        txid varchar(100) unique not null,
+        primary key (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario,
+            id_doacao
+        ),
+        foreign key (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario,
+            id_doacao
+        ) references doacao (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario,
+            id_doacao
+        )
+    );
+
+create table
+    paypal (
+        id_plataforma uuid not null,
+        id_canal uuid not null,
+        id_video uuid not null,
+        id_comentario uuid not null,
+        id_usuario uuid not null,
+        id_doacao uuid not null,
+        idpaypal varchar(100) unique not null,
+        primary key (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario,
+            id_doacao
+        ),
+        foreign key (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario,
+            id_doacao
+        ) references doacao (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario,
+            id_doacao
+        )
+    );
+
+create table
+    cartao_credito (
+        id_plataforma uuid not null,
+        id_canal uuid not null,
+        id_video uuid not null,
+        id_comentario uuid not null,
+        id_usuario uuid not null,
+        id_doacao uuid not null,
+        nro varchar(20) not null,
+        bandeira varchar(50) not null,
+        primary key (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario,
+            id_doacao
+        ),
+        foreign key (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario,
+            id_doacao
+        ) references doacao (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario,
+            id_doacao
+        )
+    );
+
+create table
+    mecanismo_plat (
+        id_plataforma uuid not null,
+        id_canal uuid not null,
+        id_video uuid not null,
+        id_comentario uuid not null,
+        id_usuario uuid not null,
+        id_doacao uuid not null,
+        seq_plataforma integer unique,
+        primary key (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario,
+            id_doacao
+        ),
+        foreign key (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario,
+            id_doacao
+        ) references doacao (
+            id_plataforma,
+            id_canal,
+            id_video,
+            id_comentario,
+            id_usuario,
+            id_doacao
+        )
+    );
