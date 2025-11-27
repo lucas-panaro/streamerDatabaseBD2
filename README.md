@@ -31,9 +31,11 @@ Alunos:
 
 6 - Executar arquivo 4.criar_triggers.sql.
 
-7 - Executar arquivo 5.popular_tabelas_dados_ficticios.sql. Este arquivo irá popular as tabelas criadas com dados artificiais.
+6 - Executar arquivo 5.criar_functions.sql. Este arquivo cria as functions que permitem popular as tabelas com os dados.
 
-8- Executar arquivo 6.executar_consultas.sql.
+7 - Executar arquivo 6.popular_tabelas_dados_ficticios.sql. Este arquivo irá popular as tabelas criadas com dados artificiais.
+
+8- Executar arquivo 7.executar_consultas.sql.
 
 ## Criação das tabelas
 
@@ -93,33 +95,7 @@ Foram implementadas **4 Triggers** no arquivo `4.criar_triggers.sql` para garant
 
 ## Criação dos dados artificiais
 
-Para criação dos dados artificiais, foi utilizado o Google Gemini, com o seguinte prompt:
-
-```
-Dado a DDL de banco de dados, crie comandos SLQ para inserção de dados artificiais.
-Para as plataformas, use as mais comuns ( youtube, twich, rumble, etc).
-Crie pelo menos:
- - 5 plataformas
- - 5 moedas
- - 5 paises
- - 100 empresas de patrocinio
- - 1000 usuários
- - 1000 comentários
- - 500 canais
- - 3 niveis_canal para cada canal
- - 1200 inscrições
- - 200 patrocinios
- - 300 doações com diferentes tipos de pagamentos (distribuidos igualmente entre elas)
-
-Não há garantia que o 1o Id inserido em uma tabela cuja PK é sequencial tenha o Id = 1.
-Adicione truncate para limpar as tabelas antes das inserções.
-Além disso, deve-se previnir conflitos, substituindo o dado pelo que está sendo inserido desta vez.
-Sem funções para criação da massa, gere todos os dados explicitamente.
-Retorne apenas um script SQL.
-{arquivo criar_tabelas.sql}
-```
-
-O retorno obtido foi adaptado para executar corretamente e salvo no arquivo popular_tabelas_dados_ficticios.sql.
+Para criação dos dados artificiais, optamos por criar functions responsáveis pela inserção dos dados com a criação das chaves estrangeiras e garantindo a integridade. Após as functions criadas, criamos outras functions que populam o banco utilizando as functions anteriores, simulando a criação natural de dados.
 
 ## Consultas
 
