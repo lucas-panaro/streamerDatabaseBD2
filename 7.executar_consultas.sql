@@ -1,14 +1,16 @@
 -- CONSULTA 01: Canais Patrocinados
-CREATE OR REPLACE FUNCTION canais_patrocinados(_empresa_nome varchar default null, _empresa_tax_id varchar(50) default null)
-RETURNS TABLE (nome_canal varchar, valor numeric)
+CREATE OR REPLACE FUNCTION canais_patrocinados(_empresa_nome varchar default null, _empresa_tax_id varchar(50) default null, _nome_plataforma varchar default null)
+RETURNS TABLE (nome_plataforma varchar, nome_canal varchar, nome_empresa varchar, valor numeric)
 AS $$
-    SELECT c.nome, p.valor
+    SELECT p.nome, c.nome, e.nome, pt.valor
     FROM canal c
-    INNER JOIN patrocinio p ON c.id_canal = p.id_canal
-	INNER JOIN empresa e on e.id_empresa = p.id_empresa
+    INNER JOIN plataforma p ON p.id_plataforma = c.id_plataforma
+    INNER JOIN patrocinio pt ON c.id_canal = pt.id_canal and c.id_plataforma = pt.id_plataforma
+	INNER JOIN empresa e on e.id_empresa = pt.id_empresa
     WHERE 1=1
 	AND (_empresa_tax_id IS NULL OR e.tax_id = _empresa_tax_id)
 	AND (_empresa_nome IS NULL OR e.nome = _empresa_nome)
+	AND (_nome_plataforma IS NULL OR p.nome = _nome_plataforma)
 $$ LANGUAGE sql;
 
 -- Possível efetuar busca por nome da empresa
@@ -16,6 +18,10 @@ select * from canais_patrocinados('Patrocinador Genérico 584');
 
 -- Possível efetuar busca por CNPJ da empresa
 select * from canais_patrocinados(null, '584');
+
+-- Possível efetuar busca por plataforma
+select * from canais_patrocinados(null, null, 'YouTube');
+
 
 -- CONSULTA 02
 CREATE OR REPLACE FUNCTION fn_membros_valor_desembolsado(_nick_usuario VARCHAR(50) DEFAULT NULL)

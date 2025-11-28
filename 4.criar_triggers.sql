@@ -79,22 +79,29 @@ CREATE OR REPLACE TRIGGER tg_check_streamer
 BEFORE INSERT ON streamer_pais
     FOR EACH ROW EXECUTE PROCEDURE fn_check_streamer_exists();
 
-CREATE TABLE IF NOT EXISTS log_video_removido (
-    id_log SERIAL PRIMARY KEY,
-    id_video UUID,
-    id_canal UUID,
-    data_remocao TIMESTAMP DEFAULT NOW(),
-    usuario_db VARCHAR(50)
-);
-
-CREATE OR REPLACE FUNCTION fn_log_video_removido() RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION fn_update_channel_views() RETURNS Trigger AS $$
+DECLARE 
+    r_view_count RECORD;
+    random_value INTEGER;
 BEGIN
-    INSERT INTO log_video_removido (id_video, id_canal, usuario_db)
-    VALUES (OLD.id_video, OLD.id_canal, current_user);
-    RETURN OLD;
+    random_value := FLOOR(RANDOM() * 1000) + 1;
+    
+    IF random_value = 1 THEN
+        FOR r_view_count IN
+            SELECT id_plataforma, id_canal, SUM(visu_total) AS total_views 
+            FROM video
+            WHERE id_plataforma = NEW.id_plataforma AND id_canal = NEW.id_canal
+            GROUP BY id_plataforma, id_canal
+        LOOP
+            UPDATE canal 
+            SET qtd_visualizacoes = r_view_count.total_views
+            WHERE id_plataforma = NEW.id_plataforma AND id_canal = NEW.id_canal;
+        END LOOP;
+    END IF;
+    RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER tg_log_video_removido
-AFTER DELETE ON video
-    FOR EACH ROW EXECUTE PROCEDURE fn_log_video_removido();
+CREATE OR REPLACE TRIGGER tg_update_channel_views
+AFTER UPDATE ON video
+    FOR EACH ROW EXECUTE PROCEDURE fn_update_channel_views();

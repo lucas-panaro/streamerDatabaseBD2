@@ -22,9 +22,8 @@ SELECT
 FROM
     nivel_canal nc
     INNER JOIN plataforma p ON nc.id_plataforma = p.id_plataforma
-    JOIN inscricao i ON nc.id_canal = i.id_canal
-    AND nc.nivel = i.nivel
-    JOIN canal c ON nc.id_canal = c.id_canal
+    INNER JOIN inscricao i ON nc.id_plataforma = i.id_plataforma AND nc.id_canal = i.id_canal AND nc.nivel = i.nivel
+    INNER JOIN canal c ON nc.id_plataforma = c.id_plataforma AND nc.id_canal = c.id_canal
 GROUP BY
     p.nome,
     c.nome;
@@ -68,23 +67,26 @@ GROUP BY
 
 -- MV 2: Faturamento Total Agregado (Depende da MV 1 e das Views Virtuais)
 CREATE MATERIALIZED VIEW MV_FATURAMENTO_TOP_CANAIS AS
-select
-    p.nome as nome_plataforma,
-    c.nome as nome_canal,
-    COALESCE(vcp.valor_patrocinio, 0.00) AS receita_patrocinio,
+SELECT
+    p.nome AS nome_plataforma,
+    c.nome AS nome_canal,
+    COALESCE(vcp_aggr.receita_patrocinio, 0.00) AS receita_patrocinio,
     COALESCE(vrmb.receita_membros_bruta, 0.00) AS receita_membros,
     COALESCE(mdtc.total_doacao_bruta, 0.00) AS receita_doacao,
     -- Soma total
-    COALESCE(vcp.valor_patrocinio, 0.00) + COALESCE(vrmb.receita_membros_bruta, 0.00) + COALESCE(mdtc.total_doacao_bruta, 0.00) AS faturamento_total
+    COALESCE(vcp_aggr.receita_patrocinio, 0.00)
+      + COALESCE(vrmb.receita_membros_bruta, 0.00)
+      + COALESCE(mdtc.total_doacao_bruta, 0.00) AS faturamento_total
 FROM
     canal c
-    inner join plataforma p on c.id_plataforma = p.id_plataforma
-    LEFT JOIN VW_CANAL_RECEITA_PATROCINIO vcp ON p.nome = vcp.nome_plataforma
-    AND c.nome = vcp.nome_canal
-    LEFT JOIN VW_RECEITA_MEMBROS_BRUTA vrmb ON p.nome = vcp.nome_plataforma
-    AND c.nome = vcp.nome_canal
-    LEFT JOIN MV_DOACAO_TOTAL_CANAL mdtc ON p.nome = mdtc.nome_plataforma
-    AND c.nome = mdtc.nome_canal;
+    INNER JOIN plataforma p ON c.id_plataforma = p.id_plataforma
+    LEFT JOIN (
+        SELECT nome_plataforma, nome_canal, SUM(valor_patrocinio) AS receita_patrocinio
+        FROM VW_CANAL_RECEITA_PATROCINIO
+        GROUP BY nome_plataforma, nome_canal
+    ) vcp_aggr ON p.nome = vcp_aggr.nome_plataforma AND c.nome = vcp_aggr.nome_canal
+    LEFT JOIN VW_RECEITA_MEMBROS_BRUTA vrmb ON p.nome = vrmb.nome_plataforma AND c.nome = vrmb.nome_canal
+    LEFT JOIN MV_DOACAO_TOTAL_CANAL mdtc ON p.nome = mdtc.nome_plataforma AND c.nome = mdtc.nome_canal;
 
 -- MV 3: Total de Visualizações por Canal (Substituto do Trigger antigo)
 CREATE MATERIALIZED VIEW MV_CANAL_VISUALIZACOES AS

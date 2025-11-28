@@ -1,12 +1,8 @@
-CREATE SCHEMA IF NOT EXISTS streamerdb;
-SET search_path TO streamerdb;
-
 TRUNCATE TABLE 
     bitcoin, paypal, cartao_credito, mecanismo_plat, doacao, 
     comentario, participa, video, inscricao, nivel_canal, 
     patrocinio, canal, streamer_pais, plataforma_usuario, 
-    usuario, empresa_pais, plataforma, empresa, conversao, pais,
-    log_video_removido
+    usuario, empresa_pais, plataforma, empresa, conversao, pais
 RESTART IDENTITY CASCADE;
 
 INSERT INTO conversao (moeda, nome, fator_conversao_dolar) VALUES
@@ -96,22 +92,20 @@ $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION fn_popular_patrocinio() RETURNS VOID AS $$
 DECLARE
-    _nome_plataforma varchar;
-    _nome_canal varchar;
-    _nome_empresa varchar;
+    r_canal RECORD;
 BEGIN
-    FOR n IN 1..1000 LOOP
-        SELECT plataforma.nome, canal.nome INTO _nome_plataforma, _nome_canal
-        FROM canal 
-        left join plataforma on plataforma.id_plataforma = canal.id_plataforma 
-        ORDER BY random() LIMIT 1;
-
-        SELECT nome INTO _nome_empresa FROM empresa ORDER BY random() LIMIT 1;
+    FOR r_canal IN
+        SELECT p.nome AS nome_plataforma, c.nome AS nome_canal
+        FROM canal c
+        INNER JOIN plataforma p ON p.id_plataforma = c.id_plataforma
+        ORDER BY random()
+        LIMIT 2000
+    LOOP
         PERFORM fn_inserir_patrocinio(
-            _nome_plataforma,
-            _nome_canal,
-            _nome_empresa,
-            (5000.00 + (n * 10.00))
+            r_canal.nome_plataforma,
+            r_canal.nome_canal,
+            (SELECT nome FROM empresa ORDER BY random() LIMIT 1),
+            (1000.00 + (random() * 9000.00))::NUMERIC
         );
     END LOOP;
 END;
@@ -119,21 +113,40 @@ $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION fn_popular_nivel_canal() RETURNS VOID AS $$
 DECLARE
-    _nome_plataforma varchar;
-    _nome_canal varchar;
+    r_canal RECORD;
+    N INT;
 BEGIN
-    FOR n IN 1..1000 LOOP
-        SELECT plataforma.nome, canal.nome INTO _nome_plataforma, _nome_canal 
-        FROM canal left join plataforma on plataforma.id_plataforma = canal.id_plataforma ORDER BY random() LIMIT 1;
+    FOR r_canal IN
+        SELECT p.nome AS nome_plataforma, c.nome AS nome_canal
+        FROM canal c
+        INNER JOIN plataforma p ON p.id_plataforma = c.id_plataforma
+        ORDER BY random()
+        LIMIT 2000
+    LOOP
+        N = (random() * 1000)::INT;
         PERFORM fn_inserir_nivel_canal(
-            _nome_plataforma,
-            _nome_canal,
-            CASE MOD(n, 3)
+            r_canal.nome_plataforma,
+            r_canal.nome_canal,
+            CASE MOD(N, 3)
                 WHEN 0 THEN 'Bronze'
                 WHEN 1 THEN 'Prata'
                 ELSE 'Ouro'
             END,
-            CASE MOD(n, 3)
+            CASE MOD(N, 3)
+                WHEN 0 THEN 4.99
+                WHEN 1 THEN 9.99
+                ELSE 24.99
+            END
+        );
+        PERFORM fn_inserir_nivel_canal(
+            r_canal.nome_plataforma,
+            r_canal.nome_canal,
+            CASE MOD(N, 11)
+                WHEN 0 THEN 'Bronze'
+                WHEN 1 THEN 'Prata'
+                ELSE 'Ouro'
+            END,
+            CASE MOD(N, 11)
                 WHEN 0 THEN 4.99
                 WHEN 1 THEN 9.99
                 ELSE 24.99
@@ -145,24 +158,23 @@ $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION fn_popular_inscricao() RETURNS VOID AS $$
 DECLARE
-    _nome_plataforma varchar;
-    _nome_canal varchar;
-    _nick_usuario varchar;
-    _nivel varchar;
+    r_nivel_canal RECORD;
+	_nick_usuario varchar;
 BEGIN
-    FOR n IN 1..1000 LOOP
-        SELECT plataforma.nome, canal.nome, nivel INTO _nome_plataforma, _nome_canal, _nivel
-        FROM nivel_canal 
-        left join plataforma on plataforma.id_plataforma = nivel_canal.id_plataforma 
-        left join canal on canal.id_canal = nivel_canal.id_canal
-        ORDER BY random() LIMIT 1;
-
+    FOR r_nivel_canal IN
+        SELECT p.nome AS nome_plataforma, c.nome AS nome_canal, nivel
+        FROM nivel_canal nc
+        INNER JOIN plataforma p ON p.id_plataforma = nc.id_plataforma
+        INNER JOIN canal c on c.id_canal = nc.id_canal
+        ORDER BY random()
+        LIMIT 2000
+    LOOP
         SELECT nick INTO _nick_usuario FROM usuario ORDER BY random() LIMIT 1;
         PERFORM fn_inserir_inscricao(
-            _nome_plataforma,
-            _nome_canal,
+            r_nivel_canal.nome_plataforma,
+            r_nivel_canal.nome_canal,
             _nick_usuario,
-            _nivel
+            r_nivel_canal.nivel
         );
     END LOOP;
 END;
@@ -170,20 +182,19 @@ $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION fn_popular_video() RETURNS VOID AS $$
 DECLARE
-    _nome_plataforma varchar;
-    _nome_canal varchar;
+    r_canal RECORD;
+    N INT = random();
 BEGIN
-    FOR n IN 1..5000 LOOP
-        SELECT p.nome, c.nome 
-        INTO _nome_plataforma, _nome_canal
+    FOR r_canal IN
+        SELECT p.nome AS nome_plataforma, c.nome AS nome_canal
         FROM canal c
-        INNER JOIN plataforma p ON p.id_plataforma = c.id_plataforma 
-        ORDER BY random() 
-        LIMIT 1;
-
+        INNER JOIN plataforma p ON p.id_plataforma = c.id_plataforma
+        ORDER BY random()
+        LIMIT 10000
+    LOOP
         PERFORM fn_inserir_video(
-            _nome_plataforma,
-            _nome_canal,
+            r_canal.nome_plataforma,
+            r_canal.nome_canal,
             'Vídeo Teste ' || n,
             NOW()::timestamp,
             CASE MOD(n, 3)
@@ -199,66 +210,60 @@ $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION fn_popular_participacao() RETURNS VOID AS $$
 DECLARE
-    _nome_plataforma varchar;
-    _nome_canal varchar;
-    _titulo varchar;
-    _datah timestamp;
-    _nick_streamer varchar;
+    r_video RECORD;
+	_nick_streamer VARCHAR;
 BEGIN
-    FOR n IN 1..1000 LOOP
-        SELECT p.nome, c.nome, v.titulo, v.datah
-        INTO _nome_plataforma, _nome_canal, _titulo, _datah
+    FOR r_video IN
+        SELECT p.nome AS nome_plataforma, c.nome AS nome_canal, v.titulo AS titulo, v.datah::TIMESTAMP AS datah
         FROM video v
-        INNER JOIN plataforma p ON p.id_plataforma = v.id_plataforma 
-        INNER JOIN canal c ON c.id_canal = v.id_canal
-        ORDER BY random() 
-        LIMIT 1;
-
+        INNER JOIN plataforma p ON p.id_plataforma = v.id_plataforma
+        INNER JOIN canal c ON c.id_canal = v.id_canal AND c.id_plataforma = v.id_plataforma
+        ORDER BY random()
+        LIMIT 10000
+    LOOP
         SELECT u.nick INTO _nick_streamer
         FROM streamer_pais sp
         INNER JOIN usuario u ON u.id_usuario = sp.id_usuario
         ORDER BY random() 
         LIMIT 1;
-
         PERFORM fn_inserir_participacao(
-            _nome_plataforma,
-            _nome_canal,
-            _titulo,
-            _datah,
+            r_video.nome_plataforma,
+            r_video.nome_canal,
+            r_video.titulo,
+            r_video.datah,
             _nick_streamer
         );
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
 
+
 CREATE OR REPLACE FUNCTION fn_popular_comentario() RETURNS VOID AS $$
 DECLARE
-    _nome_plataforma varchar;
-    _nome_canal varchar;
-    _titulo varchar;
-    _datah timestamp;
-    _nick varchar;
+    r_video RECORD;
+	_nick VARCHAR;
+    N INT;
 BEGIN
-    FOR n IN 1..7500 LOOP
-        SELECT p.nome, c.nome, v.titulo, v.datah
-        INTO _nome_plataforma, _nome_canal, _titulo, _datah
+    FOR r_video IN
+        SELECT p.nome AS nome_plataforma, c.nome AS nome_canal, v.titulo AS titulo, v.datah::TIMESTAMP AS datah
         FROM video v
-        INNER JOIN plataforma p ON p.id_plataforma = v.id_plataforma 
-        INNER JOIN canal c ON c.id_canal = v.id_canal
-        ORDER BY random() 
-        LIMIT 1;
-
+        INNER JOIN plataforma p ON p.id_plataforma = v.id_plataforma
+        INNER JOIN canal c ON c.id_canal = v.id_canal AND c.id_plataforma = v.id_plataforma
+        ORDER BY random()
+        LIMIT 10000
+    LOOP
         SELECT nick INTO _nick
         FROM usuario
         ORDER BY random() 
         LIMIT 1;
 
+        N = random() * 1000;
         PERFORM fn_inserir_comentario(
-            _nome_plataforma,
-            _nome_canal,
-            _titulo,
+            r_video.nome_plataforma,
+            r_video.nome_canal,
+            r_video.titulo,
             'Comentário teste ' || n,
-            _datah,
+            r_video.datah,
             _nick
         );
     END LOOP;
@@ -267,24 +272,21 @@ $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION fn_popular_doacao() RETURNS VOID AS $$
 DECLARE
-    _nome_plataforma VARCHAR;
-    _nome_canal VARCHAR;
-    _titulo VARCHAR;
-    _datah TIMESTAMP;
-    _nick_usuario VARCHAR;
+    r_comentario RECORD;
+    N INT;
     _tipo VARCHAR;
 BEGIN
-    FOR n IN 1..900 LOOP
-        SELECT p.nome, c.nome, v.titulo, v.datah, u.nick
-        INTO _nome_plataforma, _nome_canal, _titulo, _datah, _nick_usuario
+    FOR r_comentario IN
+        SELECT p.nome AS nome_plataforma, c.nome AS nome_canal, v.titulo AS titulo, v.datah::TIMESTAMP AS datah, u.nick AS nick_usuario
         FROM comentario cm
         INNER JOIN video v ON v.id_plataforma = cm.id_plataforma AND v.id_canal = cm.id_canal AND v.id_video = cm.id_video
+        INNER JOIN canal c ON c.id_plataforma = cm.id_plataforma AND c.id_canal = cm.id_canal
         INNER JOIN plataforma p ON p.id_plataforma = v.id_plataforma
-        INNER JOIN canal c ON c.id_canal = v.id_canal
         INNER JOIN usuario u ON u.id_usuario = cm.id_usuario
         ORDER BY random()
-        LIMIT 1;
-
+        LIMIT 500
+    LOOP
+        N = random() * 1000;
         _tipo := CASE MOD(n, 7)
             WHEN 0 THEN 'bitcoin'
             WHEN 1 THEN 'paypal'
@@ -293,11 +295,23 @@ BEGIN
         END;
 
         PERFORM fn_inserir_doacao(
-            _nome_plataforma,
-            _nome_canal,
-            _titulo,
-            _datah,
-            _nick_usuario,
+            r_comentario.nome_plataforma,
+            r_comentario.nome_canal,
+            r_comentario.titulo,
+            r_comentario.datah,
+            r_comentario.nick_usuario,
+            (5.00 + (MOD(n, 10) * 0.5)),
+            1,
+            CASE WHEN random() < 0.5 THEN 'Confirmada' ELSE 'Lida' END,
+            _tipo
+        );
+
+        PERFORM fn_inserir_doacao(
+            r_comentario.nome_plataforma,
+            r_comentario.nome_canal,
+            r_comentario.titulo,
+            r_comentario.datah,
+            r_comentario.nick_usuario,
             (5.00 + (MOD(n, 10) * 0.5)),
             1,
             CASE WHEN random() < 0.5 THEN 'Confirmada' ELSE 'Lida' END,
@@ -306,6 +320,24 @@ BEGIN
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_popular_video_view() RETURNS VOID AS $$
+DECLARE
+    r_video RECORD;
+BEGIN
+    FOR r_video IN
+        SELECT p.nome AS nome_plataforma, c.nome AS nome_canal, v.titulo, v.datah::timestamp
+        FROM video v
+        INNER JOIN plataforma p on p.id_plataforma = v.id_plataforma
+        INNER JOIN canal c on c.id_plataforma = v.id_plataforma AND c.id_canal = v.id_canal
+        ORDER BY random()
+        LIMIT 10000
+	LOOP
+    	PERFORM fn_incrementar_video_view(r_video.nome_plataforma, r_video.nome_canal, r_video.titulo, r_video.datah, (random() * 10000)::int);
+	END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
 
 CREATE OR REPLACE FUNCTION fn_popular_database() RETURNS VOID AS $$
 BEGIN
@@ -335,11 +367,17 @@ BEGIN
     PERFORM fn_popular_inscricao();
 
     PERFORM fn_popular_video();
+
+    PERFORM fn_popular_video_view();
+
     PERFORM fn_popular_participacao();
 
     PERFORM fn_popular_comentario();
 
     PERFORM fn_popular_doacao();
+    PERFORM fn_popular_doacao();
+
+    PERFORM fn_update_all_channel_views();
 END;
 $$ LANGUAGE plpgsql;
 

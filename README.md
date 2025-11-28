@@ -64,7 +64,7 @@ Foram definidas **5 Visões** (3 Virtuais e 2 Materializadas) no arquivo `2.cria
 As **Visões Virtuais** (`VW_`) foram escolhidas para dados que podem ser filtrados ou que dependem de transações recentes (patrocínio vigente, doações recentes):
 
 - **`VW_RECEITA_MEMBROS_BRUTA`**: Calcula a receita mensal bruta por canal, somando os valores de cada nível de inscrição vigente. É essencial para as consultas que envolvem faturamento de membros (Consultas 2, 6 e 8), pois os dados de `inscricao` (membros vigentes) precisam ser lidos em tempo real.
-- **`VW_RECEITA_DOACAO_POR_VIDEO`**: Agrega o valor total de doações por vídeo. Esta visão simplifica a junção de `video`, `comentario` e `doacao`, sendo a base para as consultas de doação (Consultas 4, 7 e 8).
+
 - **`VW_CANAL_RECEITA_PATROCINIO`**: Simplifica a consulta de patrocínio vigente, relacionando o canal, a empresa patrocinadora e o valor do patrocínio. Utilizada nas Consultas 1, 5 e 8.
 
 ### Visões Materializadas (Otimização para Rankeamento Pesado)
@@ -73,16 +73,20 @@ As **Visões Materializadas** (`MV_`) foram escolhidas para agregações pesadas
 
 - **`MV_DOACAO_TOTAL_CANAL`**: Calcula a soma total de doações recebidas por cada canal. A agregação de doações ao longo de todos os vídeos é uma operação custosa, e materializá-la otimiza a Consulta 7 (ranking de doações) e a composição da `MV_FATURAMENTO_TOP_CANAIS`.
 - **`MV_FATURAMENTO_TOP_CANAIS`**: Combina as três fontes de receita (Patrocínio, Membros, Doações) em um único registro de faturamento total para cada canal. Esta agregação é a mais custosa do sistema e materializá-la garante a máxima performance para a Consulta 8 (ranking de faturamento total). O cálculo utiliza as views virtuais anteriores.
+- **`MV_CANAL_VISUALIZACOES`**: Soma do total de visualizações dos vídeos de cada canal.
 
 ## Criação de Indices
 
 Para otimizar o desempenho das buscas e das operações de junção nas consultas obrigatórias (principalmente as que envolvem faturamento e listagem), foram definidos **5 Índices de Apoio** no arquivo `3.criar_indexes.sql`. A escolha destes índices visou minimizar o _overhead_ de inserção, focando em colunas que são chaves estrangeiras ou que são frequentemente usadas em filtros e ordenações:
 
-- **`idx_patrocinio_empresa_tax_id`**: Criado na coluna `empresa_tax_id` da tabela `patrocinio`. Otimiza as junções com a tabela `empresa` e acelera os filtros por empresa patrocinadora (essencial para as Consultas 1, 5 e 8).
-- **`idx_inscricao_nick_membro`**: Criado na coluna `nick_membro` da tabela `inscricao`. Melhora o acesso direto e o agrupamento dos dados de inscrição por usuário, sendo crucial para a Consulta 2 e para o cálculo do faturamento de membros.
-- **`idx_doacao_status_idcomentario`**: Este é um índice **composto** nas colunas `status` e `id_comentario` da tabela `doacao`. Ele permite que o SGBD filtre rapidamente doações com o status 'LIDA' e, em seguida, utilize o `id_comentario` para fazer a junção com a tabela `comentario` e agregar valores por vídeo (Consulta 4).
-- **`idx_video_id_canal`**: Criado na chave estrangeira `id_canal` da tabela `video`. Acelera a busca por todos os vídeos pertencentes a um canal específico, o que é fundamental para as agregações de doações por canal (Consultas 7 e 8).
-- **`idx_usuario_email_pais`**: Este é um índice **composto** nas colunas `email` e `pais_residencia` da tabela `usuario`. Foi escolhido como otimização geral para buscas que envolvem filtros combinados por localização e/ou `email`, melhorando o acesso aos dados principais dos usuários.
+- **`idx_mdtc_total_doacao`**: Criado na coluna `total_doacao_bruta` da view materializada `MV_DOACAO_TOTAL_CANAL`. Otimiza o sort e filtra os resultados que não serão retornados nas consultas.
+
+- **`idx_mftc_total`**: É um índice **composto** criado nas colunas `faturamento_total` e `nome_plataforma` da view materializada `MV_FATURAMENTO_TOP_CANAIS`. Otimiza o sort e o filtra dos resultados.
+
+- **`idx_patrocinio_valor`**: Criado nas colunas `valor` da tabela `patrocinio`. Otimiza o sort e o filtra dos resultados.
+
+- **`idx_plataforma_nome`**: Criado na coluna `nome` da tabela `plataforma`. Auxilia nos filtros de busca em multiplas consultas.
+- **`idx_canal_nome`**: Criado na coluna `nome` da tabela `canal`. Auxilia nos filtros de busca em multiplas consultas.
 
 ## Criação de Triggers
 
@@ -92,6 +96,9 @@ Foram implementadas **4 Triggers** no arquivo `4.criar_triggers.sql` para garant
 - **`tg_view_count` (Função: `fn_update_view_count`)**: Responsável por manter a consistência do atributo derivado `qtd_visualizacoes` na tabela `canal`. É acionada **APÓS** uma inserção ou remoção na tabela `video`, somando ou subtraindo o `visu_total` do canal relacionado. --A ser substituida por uma view materializada com atualização via cronjob.
 - **`tg_check_status_doacao` (Função: `fn_check_status_doacao`)**: Atua **ANTES** de qualquer inserção ou atualização na tabela `doacao`. Esta trigger garante que o campo `status` só receba valores válidos (como 'RECUSADA', 'RECEBIDA', 'LIDA' ou 'CONFIRMADA'), atendendo a um requisito de consistência de dados do projeto.
 - **`tg_check_streamer` (Função: `fn_check_streamer_exists`)**: Atua **ANTES** da inserção na tabela `streamer_pais`. Sua função é garantir a integridade referencial e a lógica de negócio, assegurando que o `nick_streamer` a ser inserido já exista na tabela `usuario` (validando o subtipo).
+- **`tg_update_channel_views` (Função: `fn_update_channel_views`)**: Atua **DEPOIS** de update na tabela `video`, porém a atualização é realizada apenas se random_value for = 1, o que limita a atualização a uma chance de 1 em 1000 atualizações de um canal específico. Sua função é atualizar a quantidade de visualizações de cada canal.
+
+- Foi criada a function fn_update_all_channel_views(), que irá atualizar a quantidade de visualisações de todos canais do Banco. Seria utilizado um Cron de hora em hora que faria este update completo, garantindo que o dado esteja atualizado, além da atualização randomica acima.
 
 ## Criação dos dados artificiais
 
