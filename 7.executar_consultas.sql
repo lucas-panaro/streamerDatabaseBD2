@@ -14,13 +14,19 @@ AS $$
 $$ LANGUAGE sql;
 
 -- Possível efetuar busca por nome da empresa
-select * from canais_patrocinados('Patrocinador Genérico 584');
+select * from canais_patrocinados((select e.nome from patrocinio p
+inner join empresa e on e.id_empresa = p.id_empresa
+order by random()
+limit 1));
 
 -- Possível efetuar busca por CNPJ da empresa
-select * from canais_patrocinados(null, '584');
+select * from canais_patrocinados(null, (select e.tax_id  from patrocinio p
+inner join empresa e on e.id_empresa = p.id_empresa
+order by random()
+limit 1));
 
 -- Possível efetuar busca por plataforma
-select * from canais_patrocinados(null, null, 'YouTube');
+select * from canais_patrocinados(null, null, (select p.nome from plataforma p order by random() limit 1));
 
 
 -- CONSULTA 02
@@ -52,6 +58,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 select * from fn_membros_valor_desembolsado();
+select * from fn_membros_valor_desembolsado((select u.nick from usuario u order by random() limit 1));
 
 -- CONSULTA 03
 CREATE OR REPLACE FUNCTION fn_canais_doacao_recebida(_nome_plataforma varchar DEFAULT NULL, _nome_canal varchar DEFAULT NULL)
@@ -68,18 +75,21 @@ BEGIN
     SELECT
         mv.nome_plataforma,
         mv.nome_canal,
-        mv.total_doacao_bruta AS soma_doacoes
+        SUM(mv.total_doacao_bruta) AS soma_doacoes
     FROM MV_DOACAO_TOTAL_CANAL mv
     WHERE
         mv.total_doacao_bruta > 0
         AND (_nome_plataforma IS NULL OR mv.nome_plataforma = _nome_plataforma)
         AND (_nome_canal IS NULL OR mv.nome_canal = _nome_canal)
+	GROUP BY mv.nome_plataforma, mv.nome_canal
     ORDER BY
         soma_doacoes DESC;
 END;
 $$ LANGUAGE plpgsql;
 
 select * from fn_canais_doacao_recebida();
+select * from fn_canais_doacao_recebida((select p.nome from plataforma p order by random() limit 1));
+select * from fn_canais_doacao_recebida(null, (select c.nome from canal c order by random() limit 1));
 
 -- CONSULTA 04
 CREATE OR REPLACE FUNCTION fn_doacoes_lidas_por_video(_nome_plataforma varchar DEFAULT NULL, _nome_canal varchar DEFAULT NULL, _titulo_video varchar DEFAULT NULL)
@@ -123,8 +133,9 @@ $$ LANGUAGE plpgsql;
 
 
 select * from fn_doacoes_lidas_por_video();
-select * from fn_doacoes_lidas_por_video('YouTube');
-
+select * from fn_doacoes_lidas_por_video((select p.nome from plataforma p order by random() limit 1));
+select * from fn_doacoes_lidas_por_video(null, (select c.nome from canal c order by random() limit 1));
+select * from fn_doacoes_lidas_por_video((select p.nome from plataforma p order by random() limit 1), (select c.nome from canal c order by random() limit 1));
 
 
 -- CONSULTA 05
@@ -153,7 +164,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 select * from fn_top_k_patrocinio(1);
-select * from fn_top_k_patrocinio(1, 'YouTube');
+select * from fn_top_k_patrocinio(1, (select p.nome from plataforma p order by random() limit 1));
 
 
 -- CONSULTA 06
@@ -184,7 +195,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 select * from fn_top_k_membros(1);
-select * from fn_top_k_membros(1, 'YouTube');
+select * from fn_top_k_membros(1, (select p.nome from plataforma p order by random() limit 1));
 
 
 -- CONSULTA 07
@@ -218,7 +229,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 select * from fn_top_k_doacoes(1);
-select * from fn_top_k_doacoes(1, 'YouTube');
+select * from fn_top_k_doacoes(1, (select p.nome from plataforma p order by random() limit 1));
 
 -- CONSULTA 08
 CREATE OR REPLACE FUNCTION fn_top_k_faturamento_total(k INTEGER, _nome_plataforma varchar DEFAULT NULL)
@@ -250,4 +261,4 @@ END;
 $$ LANGUAGE plpgsql;
 
 select * from fn_top_k_faturamento_total(1);
-select * from fn_top_k_faturamento_total(1, 'YouTube');
+select * from fn_top_k_faturamento_total(1, (select p.nome from plataforma p order by random() limit 1));
