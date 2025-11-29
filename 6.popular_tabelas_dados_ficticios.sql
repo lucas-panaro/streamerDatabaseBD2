@@ -59,10 +59,21 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION fn_popular_streammer_pais() RETURNS VOID AS $$
+DECLARE
+    r_user RECORD;
+    N INT;
 BEGIN
-    FOR n IN 1..1000 LOOP
+
+    FOR r_user IN
+        SELECT u.nick AS nick_usuario
+        FROM usuario u
+        ORDER BY random()
+        LIMIT 2000
+
+    LOOP
+        N = (random() * 1000)::INT;
         PERFORM fn_inserir_streammer(
-            (SELECT nick FROM usuario ORDER BY random() LIMIT 1),
+            r_user.nick_usuario,
             (SELECT ddi FROM pais ORDER BY random() LIMIT 1),
             'PASS-' || LPAD(n::text, 6, '0')
         );

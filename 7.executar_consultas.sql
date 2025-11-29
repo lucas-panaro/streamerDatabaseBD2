@@ -1,5 +1,5 @@
 -- CONSULTA 01: Canais Patrocinados
-CREATE OR REPLACE FUNCTION canais_patrocinados(_empresa_nome varchar default null, _empresa_tax_id varchar(50) default null, _nome_plataforma varchar default null)
+CREATE OR REPLACE FUNCTION fn_canais_patrocinados(_empresa_nome varchar default null, _empresa_tax_id varchar(50) default null, _nome_plataforma varchar default null)
 RETURNS TABLE (nome_plataforma varchar, nome_canal varchar, nome_empresa varchar, valor numeric)
 AS $$
     SELECT p.nome, c.nome, e.nome, pt.valor
@@ -14,19 +14,19 @@ AS $$
 $$ LANGUAGE sql;
 
 -- Possível efetuar busca por nome da empresa
-select * from canais_patrocinados((select e.nome from patrocinio p
+select * from fn_canais_patrocinados((select e.nome from patrocinio p
 inner join empresa e on e.id_empresa = p.id_empresa
 order by random()
 limit 1));
 
 -- Possível efetuar busca por CNPJ da empresa
-select * from canais_patrocinados(null, (select e.tax_id  from patrocinio p
+select * from fn_canais_patrocinados(null, (select e.tax_id  from patrocinio p
 inner join empresa e on e.id_empresa = p.id_empresa
 order by random()
 limit 1));
 
 -- Possível efetuar busca por plataforma
-select * from canais_patrocinados(null, null, (select p.nome from plataforma p order by random() limit 1));
+select * from fn_canais_patrocinados(null, null, (select p.nome from plataforma p order by random() limit 1));
 
 
 -- CONSULTA 02

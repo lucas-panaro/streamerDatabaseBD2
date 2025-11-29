@@ -10,6 +10,8 @@ DROP INDEX IF EXISTS idx_canal_nome;
 1-
 Indice com seletividade que auxilia a consulta 7. 
 Seleciona apenas as linhas com total_doacao_bruta > 0 e ordena em ordem decrescente.
+Criado na coluna `total_doacao_bruta` da view materializada `MV_DOACAO_TOTAL_CANAL`. 
+Otimiza o sort e filtra os resultados que não serão retornados nas consultas.
 
 Sem o indice, temos:
 Limit  (cost=60.27..60.29 rows=1 width=30)
@@ -29,6 +31,8 @@ CREATE INDEX idx_mdtc_total_doacao ON MV_DOACAO_TOTAL_CANAL (total_doacao_bruta 
 /*
 2-
 Indice escolhido para otimizar a consulta 8
+É um índice **composto** criado nas colunas `faturamento_total` e `nome_plataforma` da view materializada `MV_FATURAMENTO_TOP_CANAIS`. 
+Otimiza o sort e o filtra dos resultados.
 
 Sem o indice, temos:
 Limit  (cost=33489.44..33489.57 rows=1 width=33)
@@ -50,6 +54,9 @@ CREATE INDEX idx_mftc_total ON MV_FATURAMENTO_TOP_CANAIS (faturamento_total DESC
 /*
 3-
 Indice escolhido para otimizar a consulta 5, na tabela patrocinio
+Criado nas colunas `valor` da tabela `patrocinio`. 
+Otimiza o sort e o filtra dos resultados.
+
 Sem o indice, temos:
 Limit  (cost=223.10..223.12 rows=1 width=32)
   ->  WindowAgg  (cost=223.10..240.58 rows=999 width=32)
@@ -96,14 +103,64 @@ CREATE INDEX idx_patrocinio_valor ON patrocinio (valor DESC);
 
 /*
 4-
+Indice composto, criado nas colunas `UPPER(status)` e `id_comentario` da tabela `doacao`.
+Auxilia nos filtros de busca da consulta 4, já aplicando o modificador UPPER na coluna status.
 
+Sem o indice, temos:
+Sort  (cost=120.30..120.30 rows=1 width=65)
+  Sort Key: (COALESCE(sum(d.valor), 0.00)) DESC
+  ->  GroupAggregate  (cost=120.26..120.29 rows=1 width=65)
+        Group Key: p.nome, c.nome, v.titulo
+        ->  Sort  (cost=120.26..120.27 rows=1 width=39)
+              Sort Key: p.nome, c.nome, v.titulo
+              ->  Nested Loop  (cost=0.97..120.25 rows=1 width=39)
+                    Join Filter: (v.id_plataforma = p.id_plataforma)
+                    ->  Nested Loop  (cost=0.83..120.00 rows=1 width=79)
+                          ->  Nested Loop  (cost=0.56..106.63 rows=1 width=117)
+                                ->  Nested Loop  (cost=0.28..106.12 rows=1 width=102)
+                                      ->  Seq Scan on doacao d  (cost=0.00..67.00 rows=10 width=70)
+                                            Filter: (upper((status)::text) = 'LIDA'::text)
+                                      ->  Index Only Scan using comentario_pkey on comentario cm  (cost=0.28..3.90 rows=1 width=64)
+                                            Index Cond: ((id_plataforma = d.id_plataforma) AND (id_canal = d.id_canal) AND (id_video = d.id_video) AND (id_comentario = d.id_comentario))
+                                ->  Index Scan using video_pkey on video v  (cost=0.28..0.51 rows=1 width=63)
+                                      Index Cond: ((id_plataforma = cm.id_plataforma) AND (id_canal = cm.id_canal) AND (id_video = cm.id_video))
+                          ->  Index Scan using canal_pkey on canal c  (cost=0.28..13.36 rows=1 width=26)
+                                Index Cond: (id_canal = v.id_canal)
+                    ->  Index Scan using plataforma_pkey on plataforma p  (cost=0.13..0.24 rows=1 width=24)
+                          Index Cond: (id_plataforma = cm.id_plataforma)
+
+Com o indice, temos:
+Sort  (cost=80.49..80.49 rows=1 width=65)
+  Sort Key: (COALESCE(sum(d.valor), 0.00)) DESC
+  ->  GroupAggregate  (cost=80.45..80.48 rows=1 width=65)
+        Group Key: p.nome, c.nome, v.titulo
+        ->  Sort  (cost=80.45..80.45 rows=1 width=39)
+              Sort Key: p.nome, c.nome, v.titulo
+              ->  Nested Loop  (cost=5.32..80.44 rows=1 width=39)
+                    Join Filter: (v.id_plataforma = p.id_plataforma)
+                    ->  Nested Loop  (cost=5.19..80.19 rows=1 width=79)
+                          ->  Nested Loop  (cost=4.91..66.82 rows=1 width=117)
+                                ->  Nested Loop  (cost=4.63..66.31 rows=1 width=102)
+                                      ->  Bitmap Heap Scan on doacao d  (cost=4.36..27.19 rows=10 width=70)
+                                            Recheck Cond: (upper((status)::text) = 'LIDA'::text)
+                                            ->  Bitmap Index Scan on idx_doacao_status_idcomentario  (cost=0.00..4.35 rows=10 width=0)
+                                                  Index Cond: (upper((status)::text) = 'LIDA'::text)
+                                      ->  Index Only Scan using comentario_pkey on comentario cm  (cost=0.28..3.90 rows=1 width=64)
+                                            Index Cond: ((id_plataforma = d.id_plataforma) AND (id_canal = d.id_canal) AND (id_video = d.id_video) AND (id_comentario = d.id_comentario))
+                                ->  Index Scan using video_pkey on video v  (cost=0.28..0.51 rows=1 width=63)
+                                      Index Cond: ((id_plataforma = cm.id_plataforma) AND (id_canal = cm.id_canal) AND (id_video = cm.id_video))
+                          ->  Index Scan using canal_pkey on canal c  (cost=0.28..13.36 rows=1 width=26)
+                                Index Cond: (id_canal = v.id_canal)
+                    ->  Index Scan using plataforma_pkey on plataforma p  (cost=0.13..0.24 rows=1 width=24)
+                          Index Cond: (id_plataforma = cm.id_plataforma)
 
 
 */
-CREATE INDEX idx_plataforma_nome ON plataforma(nome);
+CREATE INDEX idx_doacao_status_idcomentario ON doacao(UPPER(status), id_comentario);
+
 
 /*
 5-
-
+Criado na coluna `nome` da tabela `canal`. Auxilia nos filtros de busca em multiplas consultas.
 */
 CREATE INDEX  idx_canal_nome ON canal(nome);

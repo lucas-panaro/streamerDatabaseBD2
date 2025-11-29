@@ -85,7 +85,8 @@ Para otimizar o desempenho das buscas e das operações de junção nas consulta
 
 - **`idx_patrocinio_valor`**: Criado nas colunas `valor` da tabela `patrocinio`. Otimiza o sort e o filtra dos resultados.
 
-- **`idx_plataforma_nome`**: Criado na coluna `nome` da tabela `plataforma`. Auxilia nos filtros de busca em multiplas consultas.
+- **`idx_doacao_status_idcomentario`**: Indice composto, criado nas colunas `UPPER(status)` e `id_comentario` da tabela `doacao`. Auxilia nos filtros de busca da consulta 4, já aplicando o modificador UPPER na coluna status.
+
 - **`idx_canal_nome`**: Criado na coluna `nome` da tabela `canal`. Auxilia nos filtros de busca em multiplas consultas.
 
 ## Criação de Triggers
@@ -93,9 +94,13 @@ Para otimizar o desempenho das buscas e das operações de junção nas consulta
 Foram implementadas **4 Triggers** no arquivo `4.criar_triggers.sql` para garantir a consistência e a integridade do banco de dados, conforme as regras de negócio e os requisitos de atributos derivados:
 
 - **`tg_user_count` (Função: `fn_update_user_count`)**: Responsável por manter a consistência do atributo derivado `qtd_users` na tabela `plataforma`. Esta trigger é acionada **APÓS** uma inserção ou remoção na tabela `plataforma_usuario`, atualizando automaticamente o contador de usuários na plataforma correspondente.
-- **`tg_view_count` (Função: `fn_update_view_count`)**: Responsável por manter a consistência do atributo derivado `qtd_visualizacoes` na tabela `canal`. É acionada **APÓS** uma inserção ou remoção na tabela `video`, somando ou subtraindo o `visu_total` do canal relacionado. --A ser substituida por uma view materializada com atualização via cronjob.
+
+- **`tg_check_comentario_cronologia` (Função: `fn_check_comentario_cronologia`)**: Responsável por manter a consistência dos comentários na tabela `comentarios`. É acionada **ANTES** uma inserção ou update na tabela `comentario`, checando se o comentário foi feito antes do horário do video.
+
 - **`tg_check_status_doacao` (Função: `fn_check_status_doacao`)**: Atua **ANTES** de qualquer inserção ou atualização na tabela `doacao`. Esta trigger garante que o campo `status` só receba valores válidos (como 'RECUSADA', 'RECEBIDA', 'LIDA' ou 'CONFIRMADA'), atendendo a um requisito de consistência de dados do projeto.
+
 - **`tg_check_streamer` (Função: `fn_check_streamer_exists`)**: Atua **ANTES** da inserção na tabela `streamer_pais`. Sua função é garantir a integridade referencial e a lógica de negócio, assegurando que o `nick_streamer` a ser inserido já exista na tabela `usuario` (validando o subtipo).
+
 - **`tg_update_channel_views` (Função: `fn_update_channel_views`)**: Atua **DEPOIS** de update na tabela `video`, porém a atualização é realizada apenas se random_value for = 1, o que limita a atualização a uma chance de 1 em 1000 atualizações de um canal específico. Sua função é atualizar a quantidade de visualizações de cada canal.
 
 - Foi criada a function fn_update_all_channel_views(), que irá atualizar a quantidade de visualisações de todos canais do Banco. Seria utilizado um Cron de hora em hora que faria este update completo, garantindo que o dado esteja atualizado, além da atualização randomica acima.
@@ -106,71 +111,27 @@ Para criação dos dados artificiais, optamos por criar functions responsáveis 
 
 ## Consultas
 
-Todas as consultas foram implementadas como **Functions** no arquivo `6.executar_consultas.sql`, utilizando a linguagem **PL/pgSQL** ou **SQL** (conforme aplicável) e fazendo uso das Views e Índices criados para garantir alta performance.
+Todas as consultas foram implementadas como **Functions** no arquivo `7.executar_consultas.sql`, utilizando a linguagem **PL/pgSQL** ou **SQL** (conforme aplicável) e fazendo uso das Views e Índices criados para garantir alta performance.
 
 As funções com parâmetro `DEFAULT NULL` ou `k` atendem ao requisito de ter parâmetros opcionais ou de listar os _top k_ elementos.
 
 ### 1. Detalhamento das Funções Parametrizadas (Com Filtro Opcional)
 
-- **Consulta 1: Canais Patrocinados** (`canais_patrocinados(_empresa_tax_id VARCHAR DEFAULT NULL)`): Lista canais e o valor do patrocínio vigente. A função otimiza o filtro por empresa patrocinadora, retornando todos os patrocínios se `_empresa_tax_id` for nulo.
+- **Consulta 1: Canais Patrocinados** (`fn_canais_patrocinados(_empresa_nome varchar default null, _empresa_tax_id varchar default null, _nome_plataforma varchar default null)`): Lista canais e o valor do patrocínio vigente.
+  A função otimiza o filtro por empresa patrocinadora e/ou por plataforma.
+
 - **Consulta 2: Valor Desembolsado por Membro** (`fn_membros_valor_desembolsado(_nick_usuario VARCHAR DEFAULT NULL)`): Calcula a quantidade de canais que cada usuário é membro e a soma do valor mensal desembolsado por ele. Permite filtro opcional para focar em um `_nick_usuario` específico.
-- **Consulta 3: Doações Recebidas por Canal** (`fn_canais_doacao_recebida(_id_canal UUID DEFAULT NULL)`): Lista e ordena os canais que receberam doações. **Otimização:** Utiliza a **`MV_DOACAO_TOTAL_CANAL`** para acesso rápido aos valores totais agregados e permite filtro opcional por `_id_canal`.
-- **Consulta 4: Soma de Doações Lidas por Vídeo** (`fn_doacoes_lidas_por_video(_id_video UUID DEFAULT NULL)`): Lista a soma das doações geradas por comentários cujo `status` é **'LIDA'**, agregadas por vídeo. **Otimização:** A filtragem por `status = 'LIDA'` é acelerada pelo índice **`idx_doacao_status_idcomentario`**, permitindo também filtro opcional por `_id_video`.
+
+- **Consulta 3: Doações Recebidas por Canal** (`fn_canais_doacao_recebida(_nome_plataforma varchar DEFAULT NULL, _nome_canal varchar DEFAULT NULL)`): Lista e ordena os canais que receberam doações. **Otimização:** Utiliza a **`MV_DOACAO_TOTAL_CANAL`** para acesso rápido aos valores totais agregados e permite filtro opcional por plataforma e por canal.
+
+- **Consulta 4: Soma de Doações Lidas por Vídeo** (`fn_doacoes_lidas_por_video(_nome_plataforma varchar DEFAULT NULL, _nome_canal varchar DEFAULT NULL, _titulo_video varchar DEFAULT NULL)`): Lista a soma das doações geradas por comentários cujo `status` é **'LIDA'**, agregadas por vídeo. **Otimização:** A filtragem por `status = 'LIDA'` é acelerada pelo índice **`idx_doacao_status_idcomentario`**, permitindo também filtro opcional por plataforma, canal e titulo.
 
 ### 2. Detalhamento das Funções de Ranking (Top K)
 
-- **Consulta 5: Top K Patrocínio** (`fn_top_k_patrocinio(k INTEGER)`): Lista e ordena os **k** canais com maior valor de patrocínio. **Otimização:** Usa a **`VW_CANAL_RECEITA_PATROCINIO`** para dados em tempo real e aplica `ORDER BY` e `LIMIT k`.
-- **Consulta 6: Top K Aportes de Membros** (`fn_top_k_membros(k INTEGER)`): Lista e ordena os **k** canais com maior receita de aportes mensais de membros. **Otimização:** Utiliza a **`VW_RECEITA_MEMBROS_BRUTA`** e aplica `ORDER BY` e `LIMIT k`.
-- **Consulta 7: Top K Doações Recebidas** (`fn_top_k_doacoes(k INTEGER)`): Lista e ordena os **k** canais que mais receberam doações (total acumulado). **Otimização:** Executa o `REFRESH MATERIALIZED VIEW MV_DOACAO_TOTAL_CANAL` para garantir a atualização dos dados antes de rankear com `ORDER BY` e `LIMIT k`.
-- **Consulta 8: Top K Faturamento Total** (`fn_top_k_faturamento_total(k INTEGER)`): Lista e ordena os **k** canais que mais faturam, considerando as três fontes de receita (Patrocínio, Membros e Doações). **Otimização:** Executa o `REFRESH MATERIALIZED VIEW MV_FATURAMENTO_TOP_CANAIS` e rankeia o faturamento total agregado.
+- **Consulta 5: Top K Patrocínio** (`fn_top_k_patrocinio(k INTEGER, _nome_plataforma varchar DEFAULT NULL)`): Lista e ordena os **k** canais com maior valor de patrocínio. **Otimização:** Usa a **`VW_CANAL_RECEITA_PATROCINIO`** para dados em tempo real e aplica `ORDER BY` e `LIMIT k`. Pode ser filtrada por plataforma.
 
-## Perguntas Revisão parcial:
+- **Consulta 6: Top K Aportes de Membros** (`fn_top_k_membros(k INTEGER, _nome_plataforma varchar DEFAULT NULL)`): Lista e ordena os **k** canais com maior receita de aportes mensais de membros. **Otimização:** Utiliza a **`VW_RECEITA_MEMBROS_BRUTA`** e aplica `ORDER BY` e `LIMIT k`. Pode ser filtrada por plataforma.
 
-1 - Na descrição do modelo tem "Cada canal é identificado por seu nome único, data de início, descrição, quantidade de vídeos postados e"
-mas no modelo relacional tem
--- Quantidade de visualizações qtd_visualizações é atributo derivado e requer atualização
-Canal(nome, tipo, data, desc, qtd_visualizacoes, nick_streamer, nro_plataforma)
-nro_plataforma referencia Plataforma(nro)
-nick_streamer referencia Usuario(nick)
+- **Consulta 7: Top K Doações Recebidas** (`fn_top_k_doacoes(k INTEGER, _nome_plataforma varchar DEFAULT NULL)`): Lista e ordena os **k** canais que mais receberam doações (total acumulado). **Otimização:** Executa o `REFRESH MATERIALIZED VIEW MV_DOACAO_TOTAL_CANAL` para garantir a atualização dos dados antes de rankear com `ORDER BY` e `LIMIT k`. Pode ser filtrada por plataforma.
 
-Devemos usar a qnt de videos ou de visualizações?
-
-2 - "tipo do canal que deve ser um entre {privado, público ou misto}."
-"Para cada doação é necessário armazenar o status que só pode ser um dos três {recusado, recebido ou lido}."
-
--> Precisamos criar um Type, ou resolveria no backend?
-https://www.postgresql.org/docs/current/datatype-enum.html
-
-3 -
-"O sistema não armazena o histórico de patrocínios, ou seja, apenas os patrocinadores com patrocínios vigentes devem aparecer nos sistema."
-"O sistema não armazena o histórico de membros, ou seja, apenas os membros vigentes devem aparecer no sistema."
--> devemos lidar com isso no db?
-
-4 - Nas consultas tem "Dar a opção de filtrar os resultados por empresa como um parâmetro opcional na forma de uma stored procedure."
-As consultas são uma function e tem tbm uma stored procedure que muda o parametro? não entendi isso.
-Não posso fazer apenas uma function com um parametro nullable?
-Ex:
-
-```sql
-create or replace function canais_patrocinados(_nro_empresa int default null)
-returns table (nome_canal varchar, valor numeric)
-as $$
-    select c.nome, p.valor
-    from canal c
-    inner join patrocinio p on c.nro_canal = p.nro_canal
-    where _nro_empresa is null or p.nro_empresa = _nro_empresa
-    $$ language sql;
-
-```
-
-5 - **Chave Composta `(nro_canal, nivel)`:** Na tabela `inscricao`, a chave estrangeira faz referência a `(nro_canal, nivel)` da tabela `nivel_canal`. Embora `(nro_canal, nivel)` seja a `PRIMARY KEY` de `nivel_canal`, **não seria mais eficiente** criar uma chave primária artificial (`id_nivel_canal` SERIAL) em `nivel_canal` para ser referenciada como FK simples na tabela `inscricao`, em vez de uma FK composta, melhorando a velocidade de _join_?
-
-6 - **Restrição de Domínio (`tipo` e `status`):** Conforme a Pergunta 2 do _README_, campos como `canal.tipo` (`privado`, `público`, `misto`) e `doacao.status` (`recusado`, `recebido`, `lido`) **devem ter restrição de domínio na camada de BD**. Embora a validação de `status` tenha sido feita via **Trigger**, a migração para o tipo nativo **`ENUM`** do PostgreSQL **não seria a solução mais canônica e performática** para garantir a validade dos dados sem o _overhead_ de `TRIGGER` para cada inserção/atualização?
-
-7 - **Precisão em Conversão de Moeda:** O campo `conversao.fator_conversao_dolar` é um `NUMERIC(10, 4)`. Dada a volatilidade do mercado e a necessidade de alta precisão em operações financeiras, **a precisão de 4 casas decimais é suficiente** ou deveríamos considerar um `NUMERIC(18, 8)` ou superior, para garantir que os cálculos de conversão para dólar não introduzam erros de arredondamento?
-
-8 - **Otimização de Atributo Derivado (Qtd. Visualizações):** A Trigger **`tg_view_count`** atualiza a `qtd_visualizacoes` do `canal` a cada inserção/deleção na tabela `video`. Dado que `qtd_visualizacoes` é uma soma sobre a coluna `visu_total` de `video`, **o custo de execução desta Trigger a cada inserção de vídeo (escrevendo na tabela `canal`) compensa o benefício de ter o dado pré-calculado**, ou seria mais eficiente criar uma **View Materializada** simples sobre `canal` e `video` para agregar a visualização e atualizá-la agendadamente?
-
-9 - **Uso de Views Materializadas e Concorrência:** As Views Materializadas (`MV_DOACAO_TOTAL_CANAL`, `MV_FATURAMENTO_TOP_CANAIS`) são atualizadas dentro das Functions de consulta (`C7` e `C8`). Dada a possibilidade de `REFRESH MATERIALIZED VIEW` bloquear leituras, **não seria obrigatório** adicionar a cláusula `CONCURRENTLY` e um `UNIQUE INDEX` na `MV` para evitar bloqueios em ambiente de produção, visto que o Faturamento Total é um cálculo pesado?
-
-10 - **Otimização do `search_path`:** O comando `SET search_path TO streamerdb;` é repetido no início de _cada_ função e trigger. **Isso é necessário ou há uma maneira mais eficiente** de configurar o _schema_ padrão globalmente ou por conexão, minimizando a repetição do comando no código procedural?
+- **Consulta 8: Top K Faturamento Total** (`fn_top_k_faturamento_total(k INTEGER, _nome_plataforma varchar DEFAULT NULL)`): Lista e ordena os **k** canais que mais faturam, considerando as três fontes de receita (Patrocínio, Membros e Doações). **Otimização:** Executa o `REFRESH MATERIALIZED VIEW MV_FATURAMENTO_TOP_CANAIS` e rankeia o faturamento total agregado. Pode ser filtrada por plataforma.
