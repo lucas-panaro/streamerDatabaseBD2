@@ -300,7 +300,7 @@ BEGIN
             r_comentario.titulo,
             r_comentario.datah,
             r_comentario.nick_usuario,
-            (5.00 + (MOD(n, 10) * 0.5)),
+            (1.00 + (random() * 50.00))::NUMERIC,
             1,
             CASE WHEN random() < 0.5 THEN 'Confirmada' ELSE 'Lida' END,
             _tipo
@@ -312,7 +312,7 @@ BEGIN
             r_comentario.titulo,
             r_comentario.datah,
             r_comentario.nick_usuario,
-            (5.00 + (MOD(n, 10) * 0.5)),
+            (1.00 + (random() * 50.00))::NUMERIC,
             1,
             CASE WHEN random() < 0.5 THEN 'Confirmada' ELSE 'Lida' END,
             _tipo
