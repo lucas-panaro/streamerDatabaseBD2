@@ -87,7 +87,7 @@ Para otimizar o desempenho das buscas e das operações de junção nas consulta
 
 - **`idx_doacao_status_idcomentario`**: Indice composto, criado nas colunas `UPPER(status)` e `id_comentario` da tabela `doacao`. Auxilia nos filtros de busca da consulta 4, já aplicando o modificador UPPER na coluna status.
 
-- **`idx_canal_nome`**: Criado na coluna `nome` da tabela `canal`. Auxilia nos filtros de busca em multiplas consultas.
+- **`idx_inscricao_id_usuario`**: Criado na coluna `id_usuario` da tabela `inscricao`. Auxilia no filtro da consulta 2, melhorando a performance ao buscar as inscrições de um usuário específico.
 
 ## Criação de Triggers
 

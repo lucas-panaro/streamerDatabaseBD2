@@ -223,6 +223,7 @@ create table
         id_usuario uuid not null,
         texto text,
         datah timestamp not null,
+        coment_on boolean default false,
         comentario_original_id_plataforma uuid,
         comentario_original_id_canal uuid,
         comentario_original_id_video uuid,

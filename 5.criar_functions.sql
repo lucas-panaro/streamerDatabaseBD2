@@ -293,12 +293,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION fn_inserir_comentario(_nome_plataforma VARCHAR, _nome_canal VARCHAR, _titulo VARCHAR, _texto text, _datah timestamp, _nick_usuario VARCHAR) RETURNS VOID AS $$
+CREATE OR REPLACE FUNCTION fn_inserir_comentario(_nome_plataforma VARCHAR, _nome_canal VARCHAR, _titulo VARCHAR, _texto text, _datah timestamp, _nick_usuario VARCHAR, _coment_on boolean) RETURNS VOID AS $$
 DECLARE
     _id_plataforma UUID;
     _id_canal UUID;
     _id_video UUID;
     _id_usuario UUID;
+    _coment_on boolean;
 BEGIN
     SELECT c.id_plataforma, c.id_canal INTO _id_plataforma, _id_canal 
     FROM canal c
@@ -321,7 +322,7 @@ BEGIN
             _nome_plataforma, _nome_canal, _titulo, _datah;
     END IF;
 
-    INSERT INTO comentario (id_plataforma, id_canal, id_video, id_comentario, id_usuario, texto, datah)
+    INSERT INTO comentario (id_plataforma, id_canal, id_video, id_comentario, id_usuario, texto, coment_on, datah)
     VALUES (
         _id_plataforma,
         _id_canal,
@@ -329,6 +330,7 @@ BEGIN
         gen_random_uuid(),
         _id_usuario,
         _texto,
+        _coment_on,
         NOW()::timestamp
     )
     ON CONFLICT (id_plataforma, id_canal, id_video, id_comentario, id_usuario) DO NOTHING;
@@ -368,7 +370,9 @@ BEGIN
     WHERE 1=1
     AND c.nome = _nome_canal 
     AND p.nome = _nome_plataforma
-    AND u.nick = _nick_usuario;
+    AND u.nick = _nick_usuario
+    AND v.titulo = _titulo
+	AND DATE_TRUNC('millisecond', v.datah) = DATE_TRUNC('millisecond', _datah);
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Comentario não encontrado: plataforma=%, canal=%', 
         _nome_plataforma, _nome_canal;

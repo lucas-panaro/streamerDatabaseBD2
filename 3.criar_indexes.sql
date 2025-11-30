@@ -3,8 +3,8 @@ SET search_path TO streamerdb;
 DROP INDEX IF EXISTS idx_mdtc_total_doacao;
 DROP INDEX IF EXISTS idx_mftc_total;
 DROP INDEX IF EXISTS idx_patrocinio_valor;
-DROP INDEX IF EXISTS idx_plataforma_nome;
-DROP INDEX IF EXISTS idx_canal_nome;
+DROP INDEX IF EXISTS idx_doacao_status_idcomentario;
+DROP INDEX IF EXISTS idx_inscricao_id_usuario;
 
 /* 
 1-
@@ -161,6 +161,33 @@ CREATE INDEX idx_doacao_status_idcomentario ON doacao(UPPER(status), id_comentar
 
 /*
 5-
-Criado na coluna `nome` da tabela `canal`. Auxilia nos filtros de busca em multiplas consultas.
+Indice criado na coluna `id_usuario` da tabela `inscricao`.
+Auxilia no filtro da consulta 2, melhorando a performance ao buscar as inscrições de um usuário específico.
+Sem o indice, temos:
+Sort  (cost=55.02..55.02 rows=1 width=50)
+  Sort Key: (COALESCE(sum(nc.valor), 0.00)) DESC
+  ->  GroupAggregate  (cost=8.59..55.01 rows=1 width=50)
+        ->  Nested Loop  (cost=8.59..54.99 rows=1 width=33)
+              ->  Hash Join  (cost=8.31..54.57 rows=1 width=47)
+                    Hash Cond: (i.id_usuario = u.id_usuario)
+                    ->  Seq Scan on inscricao i  (cost=0.00..41.00 rows=2000 width=53)
+                    ->  Hash  (cost=8.30..8.30 rows=1 width=26)
+                          ->  Index Scan using usuario_nick_key on usuario u  (cost=0.28..8.30 rows=1 width=26)
+                                Index Cond: ((nick)::text = 'teste'::text)
+              ->  Index Scan using nivel_canal_pkey on nivel_canal nc  (cost=0.28..0.42 rows=1 width=44)
+                    Index Cond: ((id_plataforma = i.id_plataforma) AND (id_canal = i.id_canal) AND ((nivel)::text = (i.nivel)::text))
+
+Com o indice, temos:
+Sort  (cost=17.05..17.05 rows=1 width=50)
+  Sort Key: (COALESCE(sum(nc.valor), 0.00)) DESC
+  ->  GroupAggregate  (cost=0.84..17.04 rows=1 width=50)
+        ->  Nested Loop  (cost=0.84..17.02 rows=1 width=33)
+              ->  Nested Loop  (cost=0.56..16.60 rows=1 width=47)
+                    ->  Index Scan using usuario_nick_key on usuario u  (cost=0.28..8.30 rows=1 width=26)
+                          Index Cond: ((nick)::text = 'teste'::text)
+                    ->  Index Scan using idx_inscricao_id_usuario on inscricao i  (cost=0.28..8.29 rows=1 width=53)
+                          Index Cond: (id_usuario = u.id_usuario)
+              ->  Index Scan using nivel_canal_pkey on nivel_canal nc  (cost=0.28..0.42 rows=1 width=44)
+                    Index Cond: ((id_plataforma = i.id_plataforma) AND (id_canal = i.id_canal) AND ((nivel)::text = (i.nivel)::text))
 */
-CREATE INDEX  idx_canal_nome ON canal(nome);
+CREATE INDEX idx_inscricao_id_usuario ON inscricao (id_usuario);

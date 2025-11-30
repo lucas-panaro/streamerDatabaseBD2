@@ -37,7 +37,9 @@ BEGIN
     
     SELECT datah INTO v_data_criacao 
     FROM video 
-    WHERE id_video = NEW.id_video AND id_canal = NEW.id_canal;
+    WHERE id_video = NEW.id_video 
+      AND id_canal = NEW.id_canal
+      AND id_plataforma = NEW.id_plataforma; 
 
     IF NEW.datah < v_data_criacao THEN
         RAISE EXCEPTION 'Inconsistência Temporal: Comentário (Data: %) não pode ser anterior ao Vídeo (Data: %).', NEW.datah, v_data_criacao;
@@ -62,8 +64,8 @@ BEGIN
     SET search_path TO streamerdb;
     NEW.status := UPPER(NEW.status);
 
-    IF NEW.status NOT IN ('RECUSADA', 'RECEBIDA', 'LIDA', 'CONFIRMADA') THEN
-        RAISE EXCEPTION 'Status de doação inválido. Deve ser "Recusada", "Recebida", "Lida" ou "Confirmada".';
+    IF NEW.status NOT IN ('RECUSADA', 'RECEBIDA', 'LIDA') THEN
+        RAISE EXCEPTION 'Status de doação inválido. Deve ser "RECUSADA", "RECEBIDA" ou "LIDA". Valor recebido: %', NEW.status;
     END IF;
     
     RETURN NEW;

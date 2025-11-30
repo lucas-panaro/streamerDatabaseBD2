@@ -173,18 +173,18 @@ DECLARE
 	_nick_usuario varchar;
 BEGIN
     FOR r_nivel_canal IN
-        SELECT p.nome AS nome_plataforma, c.nome AS nome_canal, nivel
+        SELECT p.nome AS nome_plataforma, c.nome AS nome_canal, nivel, u.nick
         FROM nivel_canal nc
         INNER JOIN plataforma p ON p.id_plataforma = nc.id_plataforma
         INNER JOIN canal c on c.id_canal = nc.id_canal
+        CROSS JOIN (SELECT nick FROM usuario ORDER BY random() LIMIT 2000) u
         ORDER BY random()
         LIMIT 2000
     LOOP
-        SELECT nick INTO _nick_usuario FROM usuario ORDER BY random() LIMIT 1;
         PERFORM fn_inserir_inscricao(
             r_nivel_canal.nome_plataforma,
             r_nivel_canal.nome_canal,
-            _nick_usuario,
+            r_nivel_canal.nick,
             r_nivel_canal.nivel
         );
     END LOOP;
@@ -275,7 +275,8 @@ BEGIN
             r_video.titulo,
             'Comentário teste ' || n,
             r_video.datah,
-            _nick
+            _nick,
+            (random() > 0.5)
         );
     END LOOP;
 END;
@@ -313,7 +314,7 @@ BEGIN
             r_comentario.nick_usuario,
             (1.00 + (random() * 50.00))::NUMERIC,
             1,
-            CASE WHEN random() < 0.5 THEN 'Confirmada' ELSE 'Lida' END,
+            CASE WHEN random() < 0.5 THEN 'RECEBIDA' ELSE 'LIDA' END,
             _tipo
         );
 
@@ -325,7 +326,7 @@ BEGIN
             r_comentario.nick_usuario,
             (1.00 + (random() * 50.00))::NUMERIC,
             1,
-            CASE WHEN random() < 0.5 THEN 'Confirmada' ELSE 'Lida' END,
+            CASE WHEN random() < 0.5 THEN 'RECEBIDA' ELSE 'LIDA' END,
             _tipo
         );
     END LOOP;

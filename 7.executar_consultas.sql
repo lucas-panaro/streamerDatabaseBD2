@@ -5,7 +5,7 @@ AS $$
     SELECT p.nome, c.nome, e.nome, pt.valor
     FROM canal c
     INNER JOIN plataforma p ON p.id_plataforma = c.id_plataforma
-    INNER JOIN patrocinio pt ON c.id_canal = pt.id_canal and c.id_plataforma = pt.id_plataforma
+    INNER JOIN patrocinio pt ON c.id_plataforma = pt.id_plataforma AND c.id_canal = pt.id_canal
 	INNER JOIN empresa e on e.id_empresa = pt.id_empresa
     WHERE 1=1
 	AND (_empresa_tax_id IS NULL OR e.tax_id = _empresa_tax_id)
@@ -14,19 +14,19 @@ AS $$
 $$ LANGUAGE sql;
 
 -- Possível efetuar busca por nome da empresa
-select * from fn_canais_patrocinados((select e.nome from patrocinio p
+/*select * from fn_canais_patrocinados((select e.nome from patrocinio p
 inner join empresa e on e.id_empresa = p.id_empresa
 order by random()
-limit 1));
+limit 1));*/
 
 -- Possível efetuar busca por CNPJ da empresa
-select * from fn_canais_patrocinados(null, (select e.tax_id  from patrocinio p
+/*select * from fn_canais_patrocinados(null, (select e.tax_id  from patrocinio p
 inner join empresa e on e.id_empresa = p.id_empresa
 order by random()
-limit 1));
+limit 1));*/
 
 -- Possível efetuar busca por plataforma
-select * from fn_canais_patrocinados(null, null, (select p.nome from plataforma p order by random() limit 1));
+/*select * from fn_canais_patrocinados(null, null, (select p.nome from plataforma p order by random() limit 1));*/
 
 
 -- CONSULTA 02
@@ -57,8 +57,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+/*
 select * from fn_membros_valor_desembolsado();
 select * from fn_membros_valor_desembolsado((select u.nick from usuario u order by random() limit 1));
+*/
 
 -- CONSULTA 03
 CREATE OR REPLACE FUNCTION fn_canais_doacao_recebida(_nome_plataforma varchar DEFAULT NULL, _nome_canal varchar DEFAULT NULL)
@@ -87,9 +89,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+/*
 select * from fn_canais_doacao_recebida();
 select * from fn_canais_doacao_recebida((select p.nome from plataforma p order by random() limit 1));
 select * from fn_canais_doacao_recebida(null, (select c.nome from canal c order by random() limit 1));
+*/
 
 -- CONSULTA 04
 CREATE OR REPLACE FUNCTION fn_doacoes_lidas_por_video(_nome_plataforma varchar DEFAULT NULL, _nome_canal varchar DEFAULT NULL, _titulo_video varchar DEFAULT NULL)
@@ -131,12 +135,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-
+/*
 select * from fn_doacoes_lidas_por_video();
 select * from fn_doacoes_lidas_por_video((select p.nome from plataforma p order by random() limit 1));
 select * from fn_doacoes_lidas_por_video(null, (select c.nome from canal c order by random() limit 1));
 select * from fn_doacoes_lidas_por_video((select p.nome from plataforma p order by random() limit 1), (select c.nome from canal c order by random() limit 1));
-
+*/
 
 -- CONSULTA 05
 CREATE OR REPLACE FUNCTION fn_top_k_patrocinio(k INTEGER, _nome_plataforma varchar DEFAULT NULL)
@@ -163,9 +167,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+/*
 select * from fn_top_k_patrocinio(1);
 select * from fn_top_k_patrocinio(1, (select p.nome from plataforma p order by random() limit 1));
-
+*/
 
 -- CONSULTA 06
 CREATE OR REPLACE FUNCTION fn_top_k_membros(k INTEGER, _nome_plataforma varchar DEFAULT NULL)
@@ -194,9 +199,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+/*
 select * from fn_top_k_membros(1);
 select * from fn_top_k_membros(1, (select p.nome from plataforma p order by random() limit 1));
-
+*/
 
 -- CONSULTA 07
 CREATE OR REPLACE FUNCTION fn_top_k_doacoes(k INTEGER, _nome_plataforma varchar DEFAULT NULL)
@@ -227,9 +233,10 @@ BEGIN
     LIMIT k;
 END;
 $$ LANGUAGE plpgsql;
-
+/*
 select * from fn_top_k_doacoes(1);
 select * from fn_top_k_doacoes(1, (select p.nome from plataforma p order by random() limit 1));
+*/
 
 -- CONSULTA 08
 CREATE OR REPLACE FUNCTION fn_top_k_faturamento_total(k INTEGER, _nome_plataforma varchar DEFAULT NULL)
@@ -259,6 +266,7 @@ BEGIN
     LIMIT k;
 END;
 $$ LANGUAGE plpgsql;
-
+/*
 select * from fn_top_k_faturamento_total(1);
 select * from fn_top_k_faturamento_total(1, (select p.nome from plataforma p order by random() limit 1));
+*/
